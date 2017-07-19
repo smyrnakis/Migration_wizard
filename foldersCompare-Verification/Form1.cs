@@ -10,7 +10,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace foldersCompare_Verification
@@ -34,7 +33,7 @@ namespace foldersCompare_Verification
         bool comparingDone = false;
         bool treeViewPopulated = false;
         bool verificationOK = false;
-        int resolveAction = 4;      // 1= keep source ; 2= keep destination ; 3= keep most recent ; 4= keep both ; //do I need it??????
+        int resolveAction = 4;      // 1= keep source ; 2= keep destination ; 3= keep most recent ; 4= keep both
 
         int copyResult = -1;        // 0: successful file copy , -1: exception thrown during copy (error) , >0: number of conflicts found (error)
 
@@ -42,9 +41,9 @@ namespace foldersCompare_Verification
         bool destinationLoaderException = false;
         bool comparingFilesException = false;
 
-        int useVanillaCopy = 0;
+        int copyMode = 0;           // -1: copyFilesMixed() , 0: copyFilesResolving() , 1: copyFilesVanilla()
 
-        string md5Sour = null;
+        string md5Sour = null;      // used for MD5 hash checks
         string md5Dest = null;
 
         List<string> affectedSourceFiles = new List<string>();          // keep track of source/destination files that operations were applied on
@@ -157,7 +156,7 @@ namespace foldersCompare_Verification
         {
             sourceLoaded = false;
             textBoxSource.ForeColor = System.Drawing.Color.Red;
-            textBoxSource.Font = new Font(textBoxSource.Font, FontStyle.Regular);
+            //textBoxSource.Font = new Font(textBoxSource.Font, FontStyle.Regular);
             if (folderBrowserDialogSource.ShowDialog() == DialogResult.OK)
             {
                 cancelBackgroundWorkers();
@@ -168,15 +167,12 @@ namespace foldersCompare_Verification
                     sourceDirectory = folderBrowserDialogSource.SelectedPath + "\\";
                     Properties.Settings.Default["lastSourceDir"] = folderBrowserDialogSource.SelectedPath + "\\";
                     Properties.Settings.Default.Save();
-                    //cancelBackgroundWorkers();
-                    //resetSettings();
-                    //checkLoadedPaths();
                 }
                 catch (Exception ex)
                 {
                     MessageBox.Show(ex.Message, "Error loading source directory", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
-                checkLoadedPaths();
+                checkLoadedPaths();     // check if path exists
             }
         }
         // Folder browser: Destination
@@ -184,7 +180,7 @@ namespace foldersCompare_Verification
         {
             destinationLoaded = false;
             textBoxDestination.ForeColor = System.Drawing.Color.Red;
-            textBoxDestination.Font = new Font(textBoxDestination.Font, FontStyle.Regular);
+            //textBoxDestination.Font = new Font(textBoxDestination.Font, FontStyle.Regular);
             if (folderBrowserDialogDestination.ShowDialog() == DialogResult.OK)
             {
                 cancelBackgroundWorkers();
@@ -195,15 +191,12 @@ namespace foldersCompare_Verification
                     destinationDirectory = folderBrowserDialogDestination.SelectedPath + "\\";
                     Properties.Settings.Default["lastDestinationDir"] = folderBrowserDialogDestination.SelectedPath + "\\";
                     Properties.Settings.Default.Save();
-                    //cancelBackgroundWorkers();
-                    //resetSettings();
-                    //checkLoadedPaths();
                 }
                 catch (Exception ex)
                 {
                     MessageBox.Show(ex.Message, "Error loading destination directory", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
-                checkLoadedPaths();
+                checkLoadedPaths();     // check if path exists
             }
         }
         // Text box: Source
@@ -213,7 +206,7 @@ namespace foldersCompare_Verification
             resetSettings();
             sourceLoaded = false;
             textBoxSource.ForeColor = System.Drawing.Color.Red;
-            textBoxSource.Font = new Font(textBoxSource.Font, FontStyle.Regular);
+            //textBoxSource.Font = new Font(textBoxSource.Font, FontStyle.Regular);
         }
         private void textBoxSource_Leave(object sender, EventArgs e)
         {
@@ -226,7 +219,7 @@ namespace foldersCompare_Verification
             sourceDirectory = textBoxSource.Text;
             Properties.Settings.Default["lastSourceDir"] = textBoxSource.Text;
             Properties.Settings.Default.Save();
-            checkLoadedPaths();
+            checkLoadedPaths();         // check if path exists
         }
         // Text Box: Destination
         private void textBoxDestination_TextChanged(object sender, EventArgs e)
@@ -235,7 +228,7 @@ namespace foldersCompare_Verification
             resetSettings();
             destinationLoaded = false;
             textBoxDestination.ForeColor = System.Drawing.Color.Red;
-            textBoxDestination.Font = new Font(textBoxDestination.Font, FontStyle.Regular);
+            //textBoxDestination.Font = new Font(textBoxDestination.Font, FontStyle.Regular);
         }
         private void textBoxDestination_Leave(object sender, EventArgs e)
         {
@@ -248,7 +241,7 @@ namespace foldersCompare_Verification
             destinationDirectory = textBoxDestination.Text;
             Properties.Settings.Default["lastDestinationDir"] = textBoxDestination.Text;
             Properties.Settings.Default.Save();
-            checkLoadedPaths();
+            checkLoadedPaths();         // check if path exists
         }
         // ---------------------------------------------------------------------------------------
 
@@ -352,6 +345,7 @@ namespace foldersCompare_Verification
                 buttonSource.Enabled = false;
                 buttonDestination.Enabled = false;
                 progressBar1.Style = ProgressBarStyle.Marquee;
+
                 backgroundWorkerCompareFiles.RunWorkerAsync();  // bgw compare files
             }
             else // Program should never enter here!
@@ -591,7 +585,7 @@ namespace foldersCompare_Verification
                             trimmedSourcePath = trimmedSourcePath.Substring(0, lastPathChar + 1);
                             fullSourcePath = trimmedSourcePath + node.FullPath.ToString();
                             // -- Getting selected node's full path (with respect to destination directory)
-                            if (useVanillaCopy == -1)
+                            if (copyMode == -1)
                             {
                                 fullDestinationPath = destinationDirectory + node.FullPath.ToString();
                             }
@@ -1042,10 +1036,10 @@ namespace foldersCompare_Verification
             treeViewCollisions.Nodes.Clear();
             try
             {
-                DirectoryInfo dirSource = new DirectoryInfo(sourceDir);
+                DirectoryInfo dirSource      = new DirectoryInfo(sourceDir);
                 DirectoryInfo dirDestination = new DirectoryInfo(destinationDir);
 
-                IEnumerable<FileInfo> sourceList = dirSource.GetFiles("*.*", SearchOption.AllDirectories);
+                IEnumerable<FileInfo> sourceList      = dirSource.GetFiles("*.*", SearchOption.AllDirectories);
                 IEnumerable<FileInfo> destinationList = dirDestination.GetFiles("*.*", SearchOption.AllDirectories);
 
                 FileCompareName myFileCompareName = new FileCompareName();                          // comparing criteria: "file name"
@@ -1054,10 +1048,9 @@ namespace foldersCompare_Verification
                 
                 if (areTheSame == true) // Only when source & destionation contain EXACTLY THE SAME files!
                 {
-                    // --> Copy files resolving --> copyFilesResolving()
-                    useVanillaCopy = 0;
+                    copyMode = 0;   // --> copyFilesResolving()
                     MessageBox.Show("The two directories contain exactly the same file names.", "Same files (compared by name)!", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    BuildTree(dirSource, treeViewCollisions.Nodes);
+                    PopulateTreeView1(dirSource, treeViewCollisions.Nodes);
 
                     // Initializing "resolve actions" to default (Keep both : "4")
                     foreach (var node in Collect(treeViewCollisions.Nodes))
@@ -1074,69 +1067,24 @@ namespace foldersCompare_Verification
                 {
                     // Quick-check for common files between source & destination (by file name only! Not by length, createDate etc)
                     IEnumerable<FileInfo> commonFiles = sourceList.Intersect(destinationList, myFileCompareName);
-                    //MessageBox.Show(commonFiles.Count().ToString(), "commonFiles.Count().ToString()");                                      // for debug !!!!!!!!!
 
-                    /*// DEBUG !!!!!!!!
-
+                    /* // DEBUG !!!!!!!!
+                    MessageBox.Show(commonFiles.Count().ToString(), "commonFiles.Count()");  
                     foreach (FileInfo cfi in commonFiles)
                     {
-                        MessageBox.Show(cfi.FullName.ToString(), "commonFiles");
+                        MessageBox.Show(cfi.FullName.ToString(), "commonFiles list");
                     }
-
-                    // DEBUG END !!!! */
+                    // DEBUG END !!!!  */
 
 
                     if (commonFiles.Count() > 0)
                     {
-                        // --> Mixed resolving (vanilla for all, copyFilesResolving for conflicts) --> copyFilesMixed()
-                        useVanillaCopy = -1;
+                        copyMode = -1;  // --> copyFilesMixed() (vanilla for all, copyFilesResolving for conflicts)
                         MessageBox.Show("Conflicts found! Please select resolve action for each file.", "Conflicts found", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
-
-                        // ----- Construct a big string with all destination files' paths -----
-                        string allDestPaths = "";
-
-                        foreach (FileInfo dFl in destinationList)
-                        {
-                            if (dFl.FullName != destinationDirectory)
-                            {
-                                allDestPaths += (dFl.FullName).Substring(destinationDirectory.Length);
-                                allDestPaths += ";";
-                            }
-                            else
-                            {
-                                allDestPaths += dFl.FullName;
-                                allDestPaths += ";";
-                            }
-                        }
-                        MessageBox.Show(allDestPaths, "allDestPaths - length: " + allDestPaths.Length.ToString());          // for debug !!!!!!!!!
                         
-                        // --------------------------------------------------------------------
-
-                        foreach (FileInfo sFl in sourceList)
-                        {
-                            string sFlwPath = sFl.FullName;
-                            //MessageBox.Show(sFlwPath, "sFlwPath = sFl.FullName");                                                           // for debug !!!!!!!!!
-                            sFlwPath = sFlwPath.Substring(sourceDirectory.Length);
-                            //MessageBox.Show(sFlwPath, "sFlwPath = sFlwPath.Substring(sourceDirectory.Length)");                             // for debug !!!!!!!!!
-                            string searchStr = @"(?<!\w)" + Regex.Escape(sFlwPath) + @"(?!\w)";     // !!! REGULAR EXPRESSION !!!
-                            //MessageBox.Show(searchStr, "searchStr - regex search str");                                                     // for debug !!!!!!!!!
-
-                            if (Regex.Match(allDestPaths, searchStr, RegexOptions.IgnoreCase).Success)
-                            {
-                                // COMMON FILES - these files will be presented to the user to resolve them
-                                //MessageBox.Show(sFl.FullName.ToString() + "\r\n\r\ncommon with:\r\n\r\n" + searchStr, "COMMON");            // for debug !!!!!!!!!
-                                commonFilesL.Add((sFl.FullName).ToString());
-                            }
-                            else
-                            {
-                                // ONLY IN SOURCE - these files will be copied with NO overwrite
-                                //MessageBox.Show(sFl.FullName.ToString() + "\r\n\r\nnot common with:\r\n\r\n" + searchStr, "NOT COMMON");    // for debug !!!!!!!!!
-                                filesInSourceListOnlyL.Add((sFl.FullName).ToString());
-                            }
-                        }
-                        // --------------------------------------------------------------------
-                        
-                        PopulateTreeView2(treeViewCollisions, commonFilesL, '\\');
+                        //PopulateTreeView2(treeViewCollisions, commonFilesL, '\\');
+                        PopulateTreeView4(treeViewCollisions, commonFiles, '\\');
+                        //BuildTree(commonFiles, treeViewCollisions.Nodes);
 
                         // Initializing "resolve actions" to default (Keep both : "4")
                         foreach (var node in Collect(treeViewCollisions.Nodes))
@@ -1151,8 +1099,7 @@ namespace foldersCompare_Verification
                     }
                     else   // No common files found. --> enable "vanillaCopy" option (copy everything from source to destination without replace)
                     {
-                        // --> Use vanilla copy --> copyFilesVanilla()
-                        useVanillaCopy = 1;
+                        copyMode = 1;   // --> copyFilesVanilla()
                         MessageBox.Show("There are no common files between the two directories.", "No common files found (compared by name)!", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         
                         radioButtonKeepSource.Enabled = false;
@@ -1161,14 +1108,13 @@ namespace foldersCompare_Verification
                         radioButtonKeepBoth.Enabled = false;
                         checkBoxApplyAll.Enabled = false;
                         checkBoxCustomSettings.Enabled = false;
-                        //labelConflicts.Text = "Files to copy :";
                         labelConflicts.Text = "Files to copy : " + "(" + sourceList.Count().ToString() + ")";
                         labelDestInfo.Enabled = false;
                         textBoxDestinationDetails.Text = "All source files will be copied to destination directory!";
                         textBoxDestinationDetails.TextAlign = HorizontalAlignment.Center;
                         textBoxDestinationDetails.Enabled = false;
 
-                        BuildTree(dirSource, treeViewCollisions.Nodes);
+                        PopulateTreeView1(dirSource, treeViewCollisions.Nodes);
 
                         // Initializing "resolve actions" to default (Keep both : "4")
                         foreach (var node in Collect(treeViewCollisions.Nodes))
@@ -1184,22 +1130,48 @@ namespace foldersCompare_Verification
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Error in dirsComparison", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                //MessageBox.Show(ex.Message + "\r\nInnerException: " + ex.InnerException.Message + "\r\n" + ex.InnerException.ToString() + "\r\n\r\n" + "copyMode: " + copyMode, "Error in dirsComparison", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(ex.Message + "\r\n\r\n" + "copyMode: " + copyMode, "Error in dirsComparison", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
-        
+
         // Compare files by: name
-        class FileCompareName : System.Collections.Generic.IEqualityComparer<System.IO.FileInfo>
+        class FileCompareName : System.Collections.Generic.IEqualityComparer<FileInfo>
         {
             public FileCompareName() { }
 
-            public bool Equals(System.IO.FileInfo f1, System.IO.FileInfo f2)
+            public bool Equals(FileInfo f1, FileInfo f2)
             {
-                return (f1.Name == f2.Name);
+                Form1 frm1 = new Form1();
+
+                string tempF1;
+                string tempF2;
+
+                int tempSdirLen = frm1.sourceDirectory.Length;
+                if (f1.FullName.Length != tempSdirLen)
+                {
+                    tempF1 = f1.FullName.Substring(tempSdirLen);
+                }
+                else
+                {
+                    tempF1 = f1.Name;
+                }
+
+                int tempDdirLen = frm1.destinationDirectory.Length;
+                if (f1.FullName.Length != tempSdirLen)
+                {
+                    tempF2 = f2.FullName.Substring(tempDdirLen);
+                }
+                else
+                {
+                    tempF2 = f2.Name;
+                }
+                
+                return (tempF1.ToLower() == tempF2.ToLower());    // return (f1.Name.ToLower() == f2.Name.ToLower());
             }
 
             // Return a hash
-            public int GetHashCode(System.IO.FileInfo fi)
+            public int GetHashCode(FileInfo fi)
             {
                 string s = String.Format("{0}", fi.Name);
                 return s.GetHashCode();
@@ -1225,8 +1197,8 @@ namespace foldersCompare_Verification
         // ---------------------------------------------------------------------------------------
 
         // ---------------------------------- treeView builders ----------------------------------
-        // Old version - (with source directory parent node)
-        private void BuildTree(DirectoryInfo directoryInfo, TreeNodeCollection addInMe)
+        // v1 - (with source directory parent node)
+        private void PopulateTreeView1(DirectoryInfo directoryInfo, TreeNodeCollection addInMe)
         {
             TreeNode curNode = addInMe.Add(directoryInfo.Name);
             //curNode.ImageKey = "folder";
@@ -1236,36 +1208,25 @@ namespace foldersCompare_Verification
             }
             foreach (DirectoryInfo subdir in directoryInfo.GetDirectories())
             {
-                BuildTree(subdir, curNode.Nodes);
+                PopulateTreeView1(subdir, curNode.Nodes);
             }
         }
 
-        // New version - trimmed path (no source directory parent node)
+        // v2 - trimmed path (no source directory parent node)
         private void PopulateTreeView2(TreeView treeView, List<String> paths, char pathSeparator)
         {
-            /*foreach (string path in paths)
-            {
-                treeView.Nodes.Add(path);
-            }*/
-
             TreeNode lastNode = null;
             string subPathAgg;
-            /*foreach (System.IO.FileInfo fl in filesInSourceListOnly)
-            {
-                MessageBox.Show((fl.FullName).ToString(), "filesInSourceListOnly: " + (filesInSourceListOnly.Count()).ToString());
-            }*/
 
             foreach (string path in paths)
             {
-                //MessageBox.Show(path, "common files: " + (paths.Count()).ToString());
                 string sourceNoSlash = (path.ToString()).Substring(0, (path.ToString()).Length - 1);
                 int sourceLastSlashInx = sourceNoSlash.LastIndexOf("\\");
-                //string editedPath = (sourceNoSlash.ToString()).Substring(sourceLastSlashInx);
                 
-                string editedPath = (path.ToString()).Substring(sourceDirectory.Length); // path editing
+                string editedPath = (path.ToString()).Substring(sourceDirectory.Length);    // path editing
                 subPathAgg = string.Empty;
-                //foreach (string subPath in path.Split(pathSeparator))
-                foreach (string subPath in editedPath.Split(pathSeparator)) // path editing
+                
+                foreach (string subPath in editedPath.Split(pathSeparator))                 // path editing
                 {
                     subPathAgg += subPath + pathSeparator;
                     TreeNode[] nodes = treeView.Nodes.Find(subPathAgg, true);
@@ -1279,15 +1240,64 @@ namespace foldersCompare_Verification
                 }
                 lastNode = null;
             }
-            /*
+        }
+
+        // v3 - (with source directory parent node)
+        /*private void PopulateTreeView3(FileInfo fileInfo, TreeNodeCollection addInMe)
+        {
+            TreeNode curNode = addInMe.Add(directoryInfo.Name);
+            //curNode.ImageKey = "folder";
+            foreach (FileInfo file in directoryInfo.GetFiles())
+            {
+                curNode.Nodes.Add(file.FullName, file.Name);
+            }
+            foreach (DirectoryInfo subdir in directoryInfo.GetDirectories())
+            {
+                PopulateTreeView3(subdir, curNode.Nodes);
+            }
+        }*/
+
+        // v4 - trimmed path (no source directory parent node)
+        private void PopulateTreeView4(TreeView treeView, IEnumerable<FileInfo> paths, char pathSeparator)
+        {
             TreeNode lastNode = null;
             string subPathAgg;
-            foreach (System.IO.FileInfo path in paths)
+            
+            foreach (FileInfo path in paths)
             {
-                //string path2 = (path.ToString()).Substring(sourceDirectory.Length); // path editing
+                string relativePath = "";
+                
+                if ((path.FullName).Length != sourceDirectory.Length)
+                    relativePath = path.FullName.Substring(sourceDirectory.Length);
+                else
+                    relativePath = path.FullName;
+                
                 subPathAgg = string.Empty;
-                //foreach (string subPath in path.Split(pathSeparator))
-                foreach (string subPath in ((path.FullName).ToString()).Split(pathSeparator)) // path editing
+                foreach (string subPath in (relativePath).Split(pathSeparator))
+                {
+                    subPathAgg += subPath + pathSeparator;
+                    TreeNode[] nodes = treeView.Nodes.Find(subPathAgg, true);
+                    if (nodes.Length == 0)
+                        if (lastNode == null)
+                            lastNode = treeView.Nodes.Add(subPathAgg, subPath);
+                        else
+                            lastNode = lastNode.Nodes.Add(subPathAgg, subPath);
+                    else
+                        lastNode = nodes[0];
+                }
+                lastNode = null;
+            }
+
+            /*foreach (var path in paths)
+            {
+                //MessageBox.Show(path.FullName.ToString(), "path");
+                string sourceNoSlash = (path.ToString()).Substring(0, (path.ToString()).Length - 1);
+                int sourceLastSlashInx = sourceNoSlash.LastIndexOf("\\");
+
+                string editedPath = (path.ToString()).Substring(sourceDirectory.Length);    // path editing
+                subPathAgg = string.Empty;
+
+                foreach (string subPath in editedPath.Split(pathSeparator))                 // path editing
                 {
                     subPathAgg += subPath + pathSeparator;
                     TreeNode[] nodes = treeView.Nodes.Find(subPathAgg, true);
@@ -1302,7 +1312,7 @@ namespace foldersCompare_Verification
                 lastNode = null;
             }*/
         }
-        
+
         // Getting all nodes in the treeview
         IEnumerable<TreeNode> Collect(TreeNodeCollection nodes)
         {
@@ -1464,15 +1474,15 @@ namespace foldersCompare_Verification
                 });
                 try
                 {
-                    if (useVanillaCopy == 1)            // Use vanilla copy
+                    if (copyMode == 1)            // Use vanilla copy
                     {
                         copyResult = copyFilesVanilla(sourceDirectory, destinationDirectory);
                     }
-                    else if (useVanillaCopy == 0)       // Copy files resolving
+                    else if (copyMode == 0)       // Copy files resolving
                     {
                         copyResult = copyFilesResolving(sourceDirectory, destinationDirectory);
                     }
-                    else if (useVanillaCopy == -1)      // Mixed resolving (vanilla for all, copyFilesResolving for conflicts)
+                    else if (copyMode == -1)      // Mixed resolving (vanilla for all, copyFilesResolving for conflicts)
                     {
                         copyResult = copyFilesMixed(sourceDirectory, destinationDirectory, filesInSourceListOnlyL);
                     }
@@ -1717,7 +1727,7 @@ namespace foldersCompare_Verification
         {
             // -- Getting selected node's full path (with respect to source directory)
             string actualSelected_tbsb = "";
-            if (useVanillaCopy == -1)
+            if (copyMode == -1)
             {
                 actualSelected_tbsb = sourceDirectory + treeViewCollisions.SelectedNode.FullPath.ToString();
             }
@@ -1741,7 +1751,7 @@ namespace foldersCompare_Verification
         }
         private void textBoxDestinationBuilder()
         {
-            if (useVanillaCopy == 1)
+            if (copyMode == 1)
             {
                 textBoxDestinationDetails.Clear();
             }
@@ -1750,7 +1760,7 @@ namespace foldersCompare_Verification
                 // -- Getting selected node's full path (with respect to destination directory)
                 string actualSelected_tbdb = "";
 
-                if (useVanillaCopy == -1)
+                if (copyMode == -1)
                 {
                     actualSelected_tbdb = destinationDirectory + treeViewCollisions.SelectedNode.FullPath.ToString();
                 }
@@ -1795,7 +1805,7 @@ namespace foldersCompare_Verification
             string actualSelected_tvcdc = "";
             int lastPathChar;
 
-            if (useVanillaCopy == -1)
+            if (copyMode == -1)
             {
                 actualSelected_tvcdc = sourceDirectory + treeViewCollisions.SelectedNode.FullPath.ToString();
             }
@@ -1885,11 +1895,11 @@ namespace foldersCompare_Verification
                 if (e.Node.Nodes.Count > 0)
                 {
                     // Calls the CheckAllChildNodes method, passing in the current 
-                    // Checked value of the TreeNode whose checked state changed. 
+                    //  checked value of the TreeNode whose checked state changed. 
                     this.CheckAllChildNodes(e.Node, e.Node.Checked, 0);
                 }
             }
-            SelectParents(e.Node, e.Node.Checked);
+            //SelectParents(e.Node, e.Node.Checked);
         }
         
         // auto checking methods 
@@ -1902,14 +1912,14 @@ namespace foldersCompare_Verification
                 {
                     node.Tag = setResolve;   // set Resolving Action for all the selected node's children
                 }
-                    if (node.Nodes.Count > 0)
+                if (node.Nodes.Count > 0)
                 {
                     // If the current node has child nodes, call the CheckAllChildsNodes method recursively.
                     this.CheckAllChildNodes(node, nodeChecked, setResolve);
                 }
             }
         }
-        // auto checking methods
+        /*// auto checking methods
         private void SelectParents(TreeNode node, Boolean isChecked)
         {
             var parent = node.Parent;
@@ -1927,7 +1937,7 @@ namespace foldersCompare_Verification
         private bool HasCheckedNode(TreeNode node)
         {
             return node.Nodes.Cast<TreeNode>().Any(n => n.Checked);
-        }
+        }*/
         // setting node's color
         private void setNodeColor()
         {
@@ -1952,7 +1962,7 @@ namespace foldersCompare_Verification
             }
             // -- Getting selected node's full path (with respect to source directory)
             string actualSelected_snc = "";
-            if (useVanillaCopy == -1) {
+            if (copyMode == -1) {
                 actualSelected_snc = sourceDirectory + treeViewCollisions.SelectedNode.FullPath.ToString();
             }
             else
@@ -2033,21 +2043,13 @@ namespace foldersCompare_Verification
                 labelGreen.Visible = true;
             }
         }
-        // textBox Source click / double click --> select all
+        // textBox Source double click --> select all
         private void textBoxSource_DoubleClick(object sender, EventArgs e)
         {
             textBoxSource.SelectAll();
         }
-        private void textBoxSource_Click(object sender, EventArgs e)
-        {
-            textBoxSource.SelectAll();
-        }
-        // textBox Destination click / double click --> select all
+        // textBox Destination double click --> select all
         private void textBoxDestination_DoubleClick(object sender, EventArgs e)
-        {
-            textBoxDestination.SelectAll();
-        }
-        private void textBoxDestination_Click(object sender, EventArgs e)
         {
             textBoxDestination.SelectAll();
         }

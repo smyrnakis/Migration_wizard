@@ -52,6 +52,7 @@
             this.fileConflictsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.sourceFilesInfoToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.mergeSettingsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.verifySourcedestinationToolStripMenuItem1 = new System.Windows.Forms.ToolStripMenuItem();
             this.folderBrowserDialogSource = new System.Windows.Forms.FolderBrowserDialog();
             this.folderBrowserDialogDestination = new System.Windows.Forms.FolderBrowserDialog();
             this.backgroundWorkerCompareFiles = new System.ComponentModel.BackgroundWorker();
@@ -80,7 +81,6 @@
             this.toolTip1 = new System.Windows.Forms.ToolTip(this.components);
             this.backgroundWorkerResolve = new System.ComponentModel.BackgroundWorker();
             this.fileSystemWatcher1 = new System.IO.FileSystemWatcher();
-            this.verifySourcedestinationToolStripMenuItem1 = new System.Windows.Forms.ToolStripMenuItem();
             this.menuStrip1.SuspendLayout();
             this.groupBox1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.fileSystemWatcher1)).BeginInit();
@@ -92,7 +92,6 @@
             this.textBoxSource.Name = "textBoxSource";
             this.textBoxSource.Size = new System.Drawing.Size(640, 20);
             this.textBoxSource.TabIndex = 0;
-            this.textBoxSource.Click += new System.EventHandler(this.textBoxSource_Click);
             this.textBoxSource.TextChanged += new System.EventHandler(this.textBoxSource_TextChanged);
             this.textBoxSource.DoubleClick += new System.EventHandler(this.textBoxSource_DoubleClick);
             this.textBoxSource.Leave += new System.EventHandler(this.textBoxSource_Leave);
@@ -103,7 +102,6 @@
             this.textBoxDestination.Name = "textBoxDestination";
             this.textBoxDestination.Size = new System.Drawing.Size(640, 20);
             this.textBoxDestination.TabIndex = 2;
-            this.textBoxDestination.Click += new System.EventHandler(this.textBoxDestination_Click);
             this.textBoxDestination.TextChanged += new System.EventHandler(this.textBoxDestination_TextChanged);
             this.textBoxDestination.DoubleClick += new System.EventHandler(this.textBoxDestination_DoubleClick);
             this.textBoxDestination.Leave += new System.EventHandler(this.textBoxDestination_Leave);
@@ -288,6 +286,13 @@
             this.mergeSettingsToolStripMenuItem.Text = "Merge settings";
             this.mergeSettingsToolStripMenuItem.Click += new System.EventHandler(this.mergeSettingsToolStripMenuItem_Click);
             // 
+            // verifySourcedestinationToolStripMenuItem1
+            // 
+            this.verifySourcedestinationToolStripMenuItem1.Name = "verifySourcedestinationToolStripMenuItem1";
+            this.verifySourcedestinationToolStripMenuItem1.Size = new System.Drawing.Size(239, 22);
+            this.verifySourcedestinationToolStripMenuItem1.Text = "Verify source-destination";
+            this.verifySourcedestinationToolStripMenuItem1.Click += new System.EventHandler(this.verifySourcedestinationToolStripMenuItem1_Click);
+            // 
             // backgroundWorkerCompareFiles
             // 
             this.backgroundWorkerCompareFiles.WorkerReportsProgress = true;
@@ -302,6 +307,8 @@
             this.treeViewCollisions.Cursor = System.Windows.Forms.Cursors.Hand;
             this.treeViewCollisions.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.treeViewCollisions.FullRowSelect = true;
+            this.treeViewCollisions.HideSelection = false;
+            this.treeViewCollisions.Indent = 15;
             this.treeViewCollisions.Location = new System.Drawing.Point(12, 110);
             this.treeViewCollisions.Name = "treeViewCollisions";
             this.treeViewCollisions.ShowNodeToolTips = true;
@@ -560,13 +567,6 @@
             // 
             this.fileSystemWatcher1.EnableRaisingEvents = true;
             this.fileSystemWatcher1.SynchronizingObject = this;
-            // 
-            // verifySourcedestinationToolStripMenuItem1
-            // 
-            this.verifySourcedestinationToolStripMenuItem1.Name = "verifySourcedestinationToolStripMenuItem1";
-            this.verifySourcedestinationToolStripMenuItem1.Size = new System.Drawing.Size(239, 22);
-            this.verifySourcedestinationToolStripMenuItem1.Text = "Verify source-destination";
-            this.verifySourcedestinationToolStripMenuItem1.Click += new System.EventHandler(this.verifySourcedestinationToolStripMenuItem1_Click);
             // 
             // Form1
             // 
