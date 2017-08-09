@@ -315,6 +315,7 @@
             this.treeViewCollisions.Size = new System.Drawing.Size(477, 401);
             this.treeViewCollisions.TabIndex = 20;
             this.treeViewCollisions.TabStop = false;
+            this.treeViewCollisions.BeforeCheck += new System.Windows.Forms.TreeViewCancelEventHandler(this.treeViewCollisions_BeforeCheck);
             this.treeViewCollisions.AfterCheck += new System.Windows.Forms.TreeViewEventHandler(this.treeViewCollisions_AfterCheck);
             this.treeViewCollisions.AfterSelect += new System.Windows.Forms.TreeViewEventHandler(this.treeViewCollisions_AfterSelect);
             this.treeViewCollisions.DoubleClick += new System.EventHandler(this.treeViewCollisions_DoubleClick);
