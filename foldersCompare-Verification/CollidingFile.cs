@@ -17,7 +17,7 @@ namespace foldersCompare_Verification
         public string nodePath { get; set; }
 
         public int resolveAction { get; set; }
-        //public int nodeTag { get; set; }
-        //public ulong size { get; set; }
+        public long sourceFileSize { get; set; }
+        public long destinationFileSize { get; set; }
     }
 }
