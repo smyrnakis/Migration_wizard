@@ -49,7 +49,7 @@ namespace foldersCompare_Verification
         IEnumerable<FileInfo> sourceList;
         IEnumerable<FileInfo> destinationList;
         // - common files in source/destination
-        IEnumerable<FileInfo> commonFiles;
+        //IEnumerable<FileInfo> commonFiles;
         List<CollidingFile> comFiles = new List<CollidingFile>();
         // - source/destination files that operations were applied on
         List<string> affectedSourceFiles = new List<string>();
@@ -333,7 +333,6 @@ namespace foldersCompare_Verification
         // ----------------------------- Get dir size / free disk space -------------------------- <?><?><?><?><?><?><?><?><?><?><?><?><?><?><?><?><?><?>
         private bool checkAvailableSpace()
         {
-            //bool okToCopy = false;
             long sourceSize                 = 0;
             long freeSpaceInDestination     = 0;
 
@@ -349,12 +348,10 @@ namespace foldersCompare_Verification
 
             if ((freeSpaceInDestination - sourceSize) > 0)
                 return true;
-                //okToCopy = true;
             else
                 MessageBox.Show("You still need " + editedSizeString(Math.Abs(freeSpaceInDestination - sourceSize)), "Not enough free space", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
 
             return false;
-            //return okToCopy;
         }
 
         // ~ calculate directory size in Bytes
@@ -566,278 +563,7 @@ namespace foldersCompare_Verification
         }
         // ---------------------------------------------------------------------------------------
 
-        /*// ----------------------- Copy files WITH collisions resolving --------------------------
-        private int copyFilesResolving(string sourceDir, string destinationDir)
-        {
-            destSuffix += DateTime.Now.ToString("dd-M-yyyy_HH-mm");
-            int returnValueresolvingCopy = 0;
-            try
-            {
-                foreach (string dir in Directory.GetDirectories(sourceDir, "*", System.IO.SearchOption.AllDirectories))
-                {
-                    Directory.CreateDirectory(destinationDir + dir.Substring(sourceDir.Length)); // create missing sub-directories
-                }
-                if (checkBoxApplyAll.Checked)   // same resolving action for ALL colliding files
-                {
-                    switch (resolveAction)
-                    {
-                        case 1:         // keep source (overwrite)
-                            foreach (string file_name in Directory.GetFiles(sourceDir, "*.*", System.IO.SearchOption.AllDirectories))
-                            {
-                                // keep track of source/destination files that operations were applied on
-                                affectedSourceFiles.Add(file_name);
-                                affectedDestinationFiles.Add(destinationDir + file_name.Substring(sourceDir.Length));
-                                File.Copy(file_name, destinationDir + file_name.Substring(sourceDir.Length), true);
-                                updateTextBoxes(file_name, destinationDir + file_name.Substring(sourceDir.Length));
-                            }
-                            break;
-                        case 2:         // keep destination (merge)
-                            foreach (string file_name in Directory.GetFiles(sourceDir, "*.*", System.IO.SearchOption.AllDirectories))
-                            {
-                                if (!File.Exists(destinationDir + file_name.Substring(sourceDir.Length)))
-                                {
-                                    // keep track of source/destination files that operations were applied on
-                                    affectedSourceFiles.Add(file_name);
-                                    affectedDestinationFiles.Add(destinationDir + file_name.Substring(sourceDir.Length));
-                                    File.Copy(file_name, destinationDir + file_name.Substring(sourceDir.Length), false);
-                                    updateTextBoxes(file_name, destinationDir + file_name.Substring(sourceDir.Length));
-                                }
-                            }
-                            break;
-                        case 3:         // keep most recent
-                            foreach (string file_name in Directory.GetFiles(sourceDir, "*.*", System.IO.SearchOption.AllDirectories))
-                            {
-                                DateTime sourceEditDate = File.GetLastWriteTimeUtc(file_name);
-                                DateTime destinationEditDate = File.GetLastWriteTimeUtc(destinationDir + file_name.Substring(sourceDir.Length));
-                                int dateCompare = DateTime.Compare(sourceEditDate, destinationEditDate);
-                                if (dateCompare < 0)        // source file was edited EARLIER than destination file
-                                {                           // keep DESTINATION
-                                    //returnValueresolvingCopy += 1;  // keep track of ignored files
-                                }
-                                else if (dateCompare == 0)  // source file was accessed SIMULTANEOUSLY with destination file!
-                                {
-                                    string fileExtension = Path.GetExtension(destinationDir + file_name.Substring(sourceDir.Length));
-                                    string pathToWrite = destinationDir + file_name.Substring(sourceDir.Length);
-                                    pathToWrite = pathToWrite.Substring(0, pathToWrite.Length - fileExtension.Length);
-                                    pathToWrite += destSuffix + fileExtension;
-                                    // keep track of source/destination files that operations were applied on
-                                    affectedSourceFiles.Add(file_name);
-                                    affectedDestinationFiles.Add(pathToWrite);
-                                    File.Copy(file_name, pathToWrite, false);
-                                    updateTextBoxes(file_name, pathToWrite);
-                                }
-                                else                        // source file was edited LATER than destination file
-                                {                           // keep SOURCE
-                                    // keep track of source/destination files that operations were applied on
-                                    affectedSourceFiles.Add(file_name);
-                                    affectedDestinationFiles.Add(destinationDir + file_name.Substring(sourceDir.Length));
-                                    File.Copy(file_name, destinationDir + file_name.Substring(sourceDir.Length), true);
-                                    updateTextBoxes(file_name, destinationDir + file_name.Substring(sourceDir.Length));
-                                }
-                            }
-                            break;
-                        case 4:         // keep both (rename source)
-                            foreach (string file_name in Directory.GetFiles(sourceDir, "*.*", System.IO.SearchOption.AllDirectories))
-                            {
-                                string pathFileToBeCopied = destinationDir + file_name.Substring(sourceDir.Length);
-                                if (!File.Exists(pathFileToBeCopied))
-                                {
-                                    // keep track of source/destination files that operations were applied on
-                                    affectedSourceFiles.Add(file_name);
-                                    affectedDestinationFiles.Add(destinationDir + file_name.Substring(sourceDir.Length));
-                                    File.Copy(file_name, destinationDir + file_name.Substring(sourceDir.Length), false);
-                                    updateTextBoxes(file_name, destinationDir + file_name.Substring(sourceDir.Length));
-                                }
-                                else
-                                {
-                                    string fileExtension = Path.GetExtension(pathFileToBeCopied);
-                                    string pathToWrite = destinationDir + file_name.Substring(sourceDir.Length);
-                                    pathToWrite = pathToWrite.Substring(0, pathToWrite.Length - fileExtension.Length);
-                                    pathToWrite += destSuffix + fileExtension;
-
-                                    if (!File.Exists(pathToWrite))  // check if renamed file (with suffix) already exists
-                                    {
-                                        // keep track of source/destination files that operations were applied on
-                                        affectedSourceFiles.Add(file_name);
-                                        affectedDestinationFiles.Add(pathToWrite);
-                                        File.Copy(file_name, pathToWrite, false);
-                                        updateTextBoxes(file_name, pathToWrite);
-                                    }
-                                    else                            // normally, it should NOT exist. If yes, add "_2" after suffix
-                                    {
-                                        returnValueresolvingCopy += 1;
-                                        destSuffix += "2_";
-                                        pathToWrite = destinationDir + file_name.Substring(sourceDir.Length);
-                                        pathToWrite = pathToWrite.Substring(0, pathToWrite.Length - fileExtension.Length);
-                                        pathToWrite += destSuffix + fileExtension;
-                                        // keep track of source/destination files that operations were applied on
-                                        affectedSourceFiles.Add(file_name);
-                                        affectedDestinationFiles.Add(pathToWrite);
-                                        File.Copy(file_name, pathToWrite, false);
-                                        updateTextBoxes(file_name, pathToWrite);
-                                    }
-                                }
-                            }
-                            break;
-                        default:        // should never enter here! 
-                            returnValueresolvingCopy = -1;
-                            MessageBox.Show("resolveAction variable error.\n\r" + resolveAction, "Error in file copy with colisions resolving!", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            break;
-                    }
-                }
-                else                           // different resolving action for each colliding file
-                {
-                    foreach (var node in Collect(treeViewCollisions.Nodes))
-                    {
-                        string fullSourcePath = "";
-                        string fullDestinationPath = "";
-
-                        if (node.Level == 0 && node.Index == 0)
-                        {
-                            fullSourcePath = sourceDirectory;
-                            fullDestinationPath = destinationDirectory;
-                        }
-                        else
-                        {
-                            // -- Getting selected node's full path (with respect to source directory)
-                            string trimmedSourcePath = sourceDirectory.Substring(0, sourceDirectory.Length - 1);
-                            int lastPathChar = trimmedSourcePath.LastIndexOf("\\");
-                            trimmedSourcePath = trimmedSourcePath.Substring(0, lastPathChar + 1);
-                            fullSourcePath = trimmedSourcePath + node.FullPath.ToString();
-                            // -- Getting selected node's full path (with respect to destination directory)
-                            if (copyModeVanilla == false)
-                            {
-                                fullDestinationPath = destinationDirectory + node.FullPath.ToString();
-                            }
-                            else
-                            {
-                                string treeViewTopNode2 = treeViewTopNode.Substring(10);
-                                fullDestinationPath = destinationDirectory.Substring(0, destinationDirectory.Length - 1) + (node.FullPath).Substring(treeViewTopNode2.Length);
-                            }
-                            // ------------------------------------------------------------------------ 
-                        }
-                        //MessageBox.Show(fullSourcePath, "1- fullSourcePath");                 // for debug !!!!
-                        //MessageBox.Show(fullDestinationPath, "2- fullDestinationPath");       // for debug !!!!
-
-                        // exit loop if current node is PATH and not FILE
-                        FileAttributes attr = File.GetAttributes(fullSourcePath);
-                        if ((attr & FileAttributes.Directory) == FileAttributes.Directory)
-                        {
-                            continue;
-                        }
-                        // ----------------------------------------------
-
-                        int curNdTag = (int)node.Tag;
-                        switch (curNdTag)
-                        {
-                            case 1:         // keep source (overwrite)
-                                // keep track of source/destination files that operations were applied on
-                                affectedSourceFiles.Add(fullSourcePath);
-                                affectedDestinationFiles.Add(fullDestinationPath);
-                                File.Copy(fullSourcePath, fullDestinationPath, true);
-                                updateTextBoxes(fullSourcePath, fullDestinationPath);
-                                break;
-                            case 2:         // keep destination (merge)
-                                if (!File.Exists(fullDestinationPath))
-                                {
-                                    // keep track of source/destination files that operations were applied on
-                                    affectedSourceFiles.Add(fullSourcePath);
-                                    affectedDestinationFiles.Add(fullDestinationPath);
-                                    File.Copy(fullSourcePath, fullDestinationPath, false);
-                                    updateTextBoxes(fullSourcePath, fullDestinationPath);
-                                }
-                                break;
-                            case 3:         // keep most recent
-                                DateTime sourceEditDate = File.GetLastWriteTimeUtc(fullSourcePath);
-                                DateTime destinationEditDate = File.GetLastWriteTimeUtc(fullDestinationPath);
-                                int dateCompare = DateTime.Compare(sourceEditDate, destinationEditDate);
-                                if (dateCompare < 0)        // source file was edited EARLIER than destination file
-                                {                           // keep DESTINATION
-                                    returnValueresolvingCopy += 1;  // keep track of ignored files
-                                }
-                                else if (dateCompare == 0)  // source file was accessed SIMULTANEOUSLY with destination file!
-                                {
-                                    string fileExtension = Path.GetExtension(fullDestinationPath);
-                                    string pathToWrite = fullDestinationPath;
-                                    pathToWrite = pathToWrite.Substring(0, pathToWrite.Length - fileExtension.Length);
-                                    pathToWrite += "_" + destSuffix + fileExtension;
-                                    // keep track of source/destination files that operations were applied on
-                                    affectedSourceFiles.Add(fullSourcePath);
-                                    affectedDestinationFiles.Add(pathToWrite);
-                                    File.Copy(fullSourcePath, pathToWrite, false);
-                                    updateTextBoxes(fullSourcePath, pathToWrite);
-                                }
-                                else                        // source file was edited LATER than destination file
-                                {                           // keep SOURCE
-                                    // keep track of source/destination files that operations were applied on
-                                    affectedSourceFiles.Add(fullSourcePath);
-                                    affectedDestinationFiles.Add(fullDestinationPath);
-                                    File.Copy(fullSourcePath, fullDestinationPath, true);
-                                    updateTextBoxes(fullSourcePath, fullDestinationPath);
-                                }
-                                break;
-                            case 4:         // keep both (rename source)
-                                if (!File.Exists(fullDestinationPath))
-                                {
-                                    // keep track of source/destination files that operations were applied on
-                                    affectedSourceFiles.Add(fullSourcePath);
-                                    affectedDestinationFiles.Add(fullDestinationPath);
-                                    File.Copy(fullSourcePath, fullDestinationPath, false);
-                                    updateTextBoxes(fullSourcePath, fullDestinationPath);
-                                }
-                                else
-                                {
-                                    string fileExtension = Path.GetExtension(fullDestinationPath);
-                                    string pathToWrite = fullDestinationPath;
-                                    pathToWrite = pathToWrite.Substring(0, pathToWrite.Length - fileExtension.Length);
-                                    pathToWrite += "_" + destSuffix + fileExtension;
-
-                                    if (!File.Exists(pathToWrite))  // check if renamed file (with suffix) already exists
-                                    { 
-                                        // keep track of source/destination files that operations were applied on
-                                        affectedSourceFiles.Add(fullSourcePath);
-                                        affectedDestinationFiles.Add(pathToWrite);
-                                        File.Copy(fullSourcePath, pathToWrite, false);
-                                        updateTextBoxes(fullSourcePath, pathToWrite);
-                                    }
-                                    else                            // normally, it should NOT exist. If yes, add "_2" after suffix
-                                    {
-                                        returnValueresolvingCopy += 1;
-                                        destSuffix += "_2";
-                                        pathToWrite = fullDestinationPath;
-                                        pathToWrite = pathToWrite.Substring(0, pathToWrite.Length - fileExtension.Length);
-                                        pathToWrite += destSuffix + fileExtension;
-                                        // keep track of source/destination files that operations were applied on
-                                        affectedSourceFiles.Add(fullSourcePath);
-                                        affectedDestinationFiles.Add(pathToWrite);
-                                        File.Copy(fullSourcePath, pathToWrite, false);
-                                        updateTextBoxes(fullSourcePath, pathToWrite);
-                                    }
-                                }
-                                break;
-                            default:        // Should NEVER enter here!
-                                returnValueresolvingCopy = -1;
-                                MessageBox.Show("resolveAction variable error.\n\r" + resolveAction, "Error in file copy with colisions resolving!", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                                break;
-                        }
-                    }
-                }
-                return returnValueresolvingCopy;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                MessageBox.Show("Error: UnauthorizedAccessException thrown!", "Error copying files! - copyFilesResolving()", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return -1;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message, "Error copying files! - copyFilesResolving()", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return -1;
-            }
-        }
-        // ---------------------------------------------------------------------------------------*/
-
-        // -------------------- Copy files (vanilla - collisions resolving) ----------------------
+        // -------------------- Copy files (vanilla & collisions resolving) ----------------------
         private int copyFilesMixed(string sourceDir, string destinationDir, List<CollidingFile> commFiles)
         {
             destSuffix += DateTime.Now.ToString("dd-M-yyyy_HH-mm");
@@ -849,11 +575,11 @@ namespace foldersCompare_Verification
                 // Create subdirectories in destination    
                 foreach (string dir in Directory.GetDirectories(sourceDir, "*", System.IO.SearchOption.AllDirectories))
                 {
-                    // removing destinationDir's absolute path
                     Directory.CreateDirectory(destinationDir + dir.Substring(sourceDir.Length));
                 }
 
                 // ------------------- Vanilla part ------------------
+                // copy every file from sourceList to destination directory, ONLY if the file don't exist already 
                 foreach (FileInfo fl_name in sourceList)
                 {
                     string pathFileToBeCopied = destinationDir + (fl_name.FullName).Substring(sourceDir.Length);
@@ -865,34 +591,34 @@ namespace foldersCompare_Verification
                         File.Copy(fl_name.FullName.ToString(), pathFileToBeCopied, false);
                         updateTextBoxes(fl_name.FullName.ToString(), pathFileToBeCopied);
                     }
-                    else                               // do I need to copy the source file (renaming) && keep destination? - To implement
+                    else                                        // do I need to copy the source file (renaming) && keep destination? - To implement - no!
                     {
-                        tempFilesIgnoredCountCheck += 1;     // counting conflicts during copy. Should be the same with "tempFilesCommonCountCheck"
+                        tempFilesIgnoredCountCheck += 1;        // counting conflicts during copy. Should be the same with "tempFilesCommonCountCheck"
                     }
                 }
                 // ---------------------------------------------------
                 // ------------------ Resolving part -----------------
                 foreach (var node in Collect(treeViewCollisions.Nodes))
                 {
-                    tempFilesCommonCountCheck += 1;
-                    /*// -- Getting selected node's full path (with respect to source directory)
-                    string fullSourcePath = sourceDirectory + node.FullPath.ToString();
-                    // -- Getting selected node's full path (with respect to destination directory)
-                    string fullDestinationPath = destinationDirectory + node.FullPath.ToString();
-                    // ------------------------------------------------------------------------*/
+                    var collFile = new foldersCompare_Verification.CollidingFile();
 
-                    // ---- Getting selected node's full path (source & destination side) -----
-                    var collFile = comFiles.FirstOrDefault(x => x.nodePath == node.FullPath);
+                    // Check every node's attribute (directory or file?)
+                    FileAttributes attr = File.GetAttributes(sourceDir + node.FullPath);
+                    if ((attr & FileAttributes.Directory) == FileAttributes.Directory)
+                    {
+                        continue;   // exit loop if current node is DIRECTORY and not a FILE
+                    }
+                    else
+                    {
+                        collFile = comFiles.FirstOrDefault(x => x.nodePath == node.FullPath);
+                        tempFilesCommonCountCheck += 1;         // counting files processed. Should be the same with "tempFilesIgnoredCountCheck"    
+                    }
+                    
                     string fullSourcePath       = collFile.PathToSource;
                     string fullDestinationPath  = collFile.PathToDestination;
                     // ------------------------------------------------------------------------
 
-                    // exit loop if current node is DIRECTORY and not a FILE
-                    FileAttributes attr = File.GetAttributes(fullSourcePath);
-                    if ((attr & FileAttributes.Directory) == FileAttributes.Directory)
-                    {
-                        continue;
-                    }
+                    
                     // ----------------------------------------------
 
                     if (checkBoxApplyAll.Checked)   // same resolving action for ALL colliding files
@@ -993,8 +719,6 @@ namespace foldersCompare_Verification
                     }
                     else                           // different resolving action for each colliding file
                     {
-                        /*int curNdTag = (int)node.Tag;
-                        switch (curNdTag)*/
                         switch (collFile.resolveAction)
                         {
                             case 1:         // keep source (overwrite)
@@ -1089,8 +813,21 @@ namespace foldersCompare_Verification
                         }
                     }
                 }
-                MessageBox.Show("tempFilesIgnoredCountCheck: " + tempFilesIgnoredCountCheck + "\r\n" + "tempFilesCommonCountCheck: " + tempFilesCommonCountCheck, "Are the numbers equal?");
-                return returnValueMixedCopy;
+
+                BeginInvoke((MethodInvoker)delegate
+                {
+                    textBoxDestinationDetails.Clear();
+                });
+
+                DialogResult dialogResult = MessageBox.Show("tempFilesIgnoredCountCheck     : " + tempFilesIgnoredCountCheck + "\r\n" +
+                                                            "tempFilesCommonCountCheck      : " + tempFilesCommonCountCheck, "Are the numbers equal?", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+                if (dialogResult == DialogResult.Yes)
+                    return returnValueMixedCopy;
+                else
+                {
+                    MessageBox.Show("Files did not copied successfully...", "Opa!! Hopla!! Oups!!", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return -1;
+                }
                 // ---------------------------------------------------
             }
             catch (UnauthorizedAccessException)
@@ -1172,7 +909,7 @@ namespace foldersCompare_Verification
 
                 sourceList      = dirSource.GetFiles("*.*", SearchOption.AllDirectories);
                 destinationList = dirDestination.GetFiles("*.*", SearchOption.AllDirectories);
-
+                
                 // -------------------------- FOR DEBUG --------------------------
                 /*foreach (var sl in sourceList)
                 {
@@ -1194,15 +931,13 @@ namespace foldersCompare_Verification
                 FileCompareName myFileCompareName = new FileCompareName();
 
                 // Check for common files between source & destination (by file name only! Not by length, createDate etc)
-                //IEnumerable<FileInfo> commonFiles = sourceList.Intersect(destinationList, myFileCompareName);
-                commonFiles = sourceList.Intersect(destinationList, myFileCompareName);
+                IEnumerable<FileInfo> commonFiles = sourceList.Intersect(destinationList, myFileCompareName);
 
                 if (commonFiles.Count() > 0)
                 {
                     copyModeVanilla = false;  // --> copyFilesMixed() (vanilla for all, copyFilesResolving for conflicts)
                     MessageBox.Show("Conflicts found! Please select resolve action for each file.", "Conflicts found", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
-
-                    int count = 0;
+                    
                     foreach (FileInfo cf in commonFiles)
                     {
                         string tempCFfullName       = cf.FullName;
@@ -1211,7 +946,6 @@ namespace foldersCompare_Verification
                         string pathOfNode           = tempCFfullName.Substring(sourceDirectory.Length);
 
                         comFiles.Add(new CollidingFile { file = cf, PathToSource = tempCFfullName, PathToDestination = tempPathToDest, nodePath = pathOfNode, resolveAction = resolveAction });
-                        count++;
                     }
 
                     PopulateTreeView(treeViewCollisions, comFiles, '\\');
@@ -1237,9 +971,7 @@ namespace foldersCompare_Verification
                     textBoxDestinationDetails.Text = "All source files will be copied to destination directory!";
                     textBoxDestinationDetails.TextAlign = HorizontalAlignment.Center;
                     textBoxDestinationDetails.Enabled = false;
-                    //textBoxDestinationDetails.Clear();
-
-                    int count = 0;
+                    
                     foreach (FileInfo sl in sourceList)
                     {
                         string tempCFfullName = sl.FullName;
@@ -1248,7 +980,6 @@ namespace foldersCompare_Verification
                         string pathOfNode = tempCFfullName.Substring(sourceDirectory.Length);
 
                         comFiles.Add(new CollidingFile { file = sl, PathToSource = tempCFfullName, PathToDestination = tempPathToDest, nodePath = pathOfNode, resolveAction = resolveAction});
-                        count++;
                     }
                     
                     PopulateTreeView(treeViewCollisions, comFiles, '\\');
@@ -1261,14 +992,16 @@ namespace foldersCompare_Verification
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message + "\r\n\r\n" + "copyModeVanilla: " + copyModeVanilla.ToString(), "Error in dirsComparison", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                //MessageBox.Show(ex.Message + "\r\nInnerException: " + ex.InnerException.Message + "\r\n" + ex.InnerException.ToString() + "\r\n\r\n" + "copyMode: " + copyMode, "Error in dirsComparison", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (ex.InnerException == null)
+                    MessageBox.Show(ex.Message + "\r\n\r\n" + "copyModeVanilla: " + copyModeVanilla.ToString(), "Error in dirsComparison", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                else
+                    MessageBox.Show("Exception: " + ex.Message + "\r\n\r\nInnerException message: " + ex.InnerException.Message + "\r\n\r\n InnerException: " + ex.InnerException.ToString() + "\r\n\r\n" + "copyModeVanilla: " + copyModeVanilla.ToString(), "Error in dirsComparison", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
 
-            if (checkAvailableSpace())
-                MessageBox.Show("There is available free space!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            else
+            if (!checkAvailableSpace())
                 MessageBox.Show("There is NO free space!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            /*else
+                MessageBox.Show("There is available free space!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);*/
         }
 
         // Compare files by: name
@@ -1280,24 +1013,18 @@ namespace foldersCompare_Verification
             {
                 Form1 frm1 = new Form1();
 
-                /*string tempF1;
-                string tempF2;
-
-                tempF1 = f1.FullName.Substring(frm1.sourceDirectory.Length);
-                tempF2 = f2.FullName.Substring(frm1.destinationDirectory.Length);*/
-
                 string tempF1 = f1.FullName.Substring(frm1.sourceDirectory.Length);
                 string tempF2 = f2.FullName.Substring(frm1.destinationDirectory.Length);
-
-                //bool equal = (tempF1.ToLower() == tempF2.ToLower());
-
+                
+                // -------------------------- FOR DEBUG --------------------------
                 /*MessageBox.Show("► tempF1:\r\n" + tempF1 + "\r\n\r\n" + "f1.FullName:\r\n" + f1.FullName + "\r\n\r\n" + "tempF1.ToLower():\r\n" + tempF1.ToLower() 
                                 + "\r\n\r\n\r\n\r\n" +
                                 "► tempF2:\r\n" + tempF2 + "\r\n\r\n" + "f2.FullName:\r\n" + f2.FullName + "\r\n\r\n" + "tempF2.ToLower():\r\n" + tempF2.ToLower()
                                 , equal.ToString());*/
 
                 //MessageBox.Show(tempF1.ToLower() + "\r\n\r\n" + tempF2.ToLower(), "tempF1.ToLower() + tempF2.ToLower()");     // for debug !!!
-                //return equal;
+                // ---------------------------------------------------------------
+                
                 return (tempF1.ToLower() == tempF2.ToLower());
             }
             // Return a hash
@@ -1444,19 +1171,19 @@ namespace foldersCompare_Verification
         }
         private void backgroundWorkerMD5_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
+            // -------------------------- FOR DEBUG --------------------------
             //textBoxDestinationDetails.Text = "Source directory MD5:       ";
             //textBoxDestinationDetails.Text += md5Sour;
             //textBoxDestinationDetails.Text += "\r\n\r\nDestination directory MD5: ";
             //textBoxDestinationDetails.Text += md5Dest;
+            // ---------------------------------------------------------------
             int compResult = string.Compare(md5Sour, md5Dest);
             switch (string.Compare(md5Sour, md5Dest))
             {
                 case 0:
-                    //textBoxDestinationDetails.Text += "\r\n\r\nThe two folders are the same! ☺";
                     MessageBox.Show("The two folders are the same! ☺\n\r\n\rMD5 hash: " + md5Sour, "MD5 comparison result", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     break;
                 default:
-                    //textBoxDestinationDetails.Text += "\r\n\r\nThe two folders are NOT the same! ☹";
                     MessageBox.Show("The two folders are NOT the same! ☹\n\r\n\rSource directory MD5:         " + md5Sour + "\r\nDestination directory MD5: " + md5Dest, "MD5 comparison result", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
                     break;
             }
@@ -1531,22 +1258,9 @@ namespace foldersCompare_Verification
                     {
                         copyResult = copyFilesVanilla(sourceDirectory, destinationDirectory);
                     }
-                    /*else if (copyMode == 0)       // Copy files resolving
-                    {
-                        copyResult = copyFilesResolving(sourceDirectory, destinationDirectory);
-                    }*/
-                    else if (!copyModeVanilla)      // Mixed resolving (vanilla for all, copyFilesResolving for conflicts)
+                    else                            // Mixed resolving (vanilla for all, copyFilesResolving for conflicts)
                     {
                         copyResult = copyFilesMixed(sourceDirectory, destinationDirectory, comFiles);
-                    }
-                    else
-                    {
-                        cancelBackgroundWorkers();
-                        BeginInvoke((MethodInvoker)delegate
-                        {
-                            restoreAfterResolve();
-                        });
-                        MessageBox.Show("Wrong value for useVanillaCopy variable!", "Error in backgroundWorkerResolve", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 }
                 catch (Exception ex)
@@ -1703,7 +1417,9 @@ namespace foldersCompare_Verification
         private void selectAllToolStripMenuItem_Click(object sender, EventArgs e)
         {
             selectAllToolStripMenuItem.Checked = !selectAllToolStripMenuItem.Checked;
-            if (selectAllToolStripMenuItem.Checked) { 
+            bypassCancel = true;        // temporary allow checkBoxes to change state
+            if (selectAllToolStripMenuItem.Checked)
+            { 
                 foreach (TreeNode node in treeViewCollisions.Nodes)
                 {
                     node.Checked = true;
@@ -1718,11 +1434,13 @@ namespace foldersCompare_Verification
                     checkUncheckAll(node, false);
                 }
             }
+            bypassCancel = false;
         }
         // - Inverse selection
         private void invertSelectionToolStripMenuItem_Click(object sender, EventArgs e)
         {
             selectAllToolStripMenuItem.Checked = false;
+            bypassCancel = true;
             //bool currentNodeState;
             foreach (TreeNode node in treeViewCollisions.Nodes)
             {
@@ -1731,6 +1449,7 @@ namespace foldersCompare_Verification
                 else
                     checkUncheckAll(node, true);
             }
+            bypassCancel = false;
         }
         // - Verify source-destination
         private void verifySourcedestinationToolStripMenuItem_Click(object sender, EventArgs e)
@@ -1823,30 +1542,14 @@ namespace foldersCompare_Verification
         // ~ open file/folder @ double click
         private void treeViewCollisions_DoubleClick(object sender, EventArgs e)
         {
-            //MessageBox.Show(treeViewCollisions.SelectedNode.FullPath.ToString(),"Double click");
-            string actualSelected_tvcdc = "";
-            string trimmedSourcePath = "";
-            int lastPathChar;
-
-            if (!copyModeVanilla)
-            {
-                actualSelected_tvcdc = sourceDirectory + treeViewCollisions.SelectedNode.FullPath.ToString();
-            }
-            else
-            {
-                trimmedSourcePath = sourceDirectory.Substring(0, sourceDirectory.Length - 1);
-                lastPathChar = trimmedSourcePath.LastIndexOf("\\");
-                trimmedSourcePath = trimmedSourcePath.Substring(0, lastPathChar + 1);
-                actualSelected_tvcdc = trimmedSourcePath + treeViewCollisions.SelectedNode.FullPath.ToString();
-            }
-            
             try
             {
-                System.Diagnostics.Process.Start(actualSelected_tvcdc);
+                System.Diagnostics.Process.Start(sourceDirectory + treeViewCollisions.SelectedNode.FullPath.ToString());
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message + "\r\n\r\nRequested file path:\r\n" + actualSelected_tvcdc, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(ex.Message + "\r\n\r\nRequested file path:\r\n" 
+                                           + sourceDirectory + treeViewCollisions.SelectedNode.FullPath.ToString(), "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1934,7 +1637,7 @@ namespace foldersCompare_Verification
         // ~ checkBox checked - auto-check all children nodes
         private void treeViewCollisions_AfterCheck(object sender, TreeViewEventArgs e)
         {
-            //  GET CURRENTS NODE collFile.resolveAction AND PASS IT TO THE CALL LATER !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            //  GET CURRENTS NODE collFile.resolveAction AND PASS IT TO THE CALL LATER <?><?><?><?><?><?><?><?><?><?><?><?><?><?>
             if (e.Action != TreeViewAction.Unknown)
             {
                 if (e.Node.Nodes.Count > 0)
@@ -1963,7 +1666,6 @@ namespace foldersCompare_Verification
 
                 node.Checked = nodeChecked;
 
-                //if (!isDirectory && setResolve > 0)   <?><?><?><?><?><?><?><?><?><?><?><?><?><?><?><?><?><?><?><?><?><?><?>
                 if (!isDirectory && checkBoxCustomSettings.Checked)
                 {
                     var collFile = comFiles.FirstOrDefault(x => x.nodePath == node.FullPath);
@@ -1997,7 +1699,7 @@ namespace foldersCompare_Verification
             }
         }
 
-        /*// auto checking methods
+        /*// check parents
         private void SelectParents(TreeNode node, Boolean isChecked)
         {
             var parent = node.Parent;
@@ -2077,7 +1779,6 @@ namespace foldersCompare_Verification
                 var collFile = comFiles.FirstOrDefault(x => x.nodePath == treeViewCollisions.SelectedNode.FullPath);
                 collFile.resolveAction = rslvAction;
             }
-            //treeViewCollisions.SelectedNode.Tag = rslvAction;
         }
         // ---------------------------------------------------------------------------------------
 
@@ -2107,7 +1808,7 @@ namespace foldersCompare_Verification
                 labelDarkOrange.Visible = false;
                 labelBlue.Visible = false;
                 labelGreen.Visible = false;
-                treeViewCollisions.CheckBoxes = false;
+                treeViewCollisions.CheckBoxes = false;  // disable checkBoxes in treeView
                 treeViewCollisions.ExpandAll();
             }
             else
@@ -2116,7 +1817,7 @@ namespace foldersCompare_Verification
                 labelDarkOrange.Visible = true;
                 labelBlue.Visible = true;
                 labelGreen.Visible = true;
-                treeViewCollisions.CheckBoxes = true;
+                treeViewCollisions.CheckBoxes = true;   // enable checkBoxes in treeView
                 treeViewCollisions.ExpandAll();
             }
         }
@@ -2130,7 +1831,7 @@ namespace foldersCompare_Verification
                 labelDarkOrange.Visible = false;
                 labelBlue.Visible = false;
                 labelGreen.Visible = false;
-                treeViewCollisions.CheckBoxes = false;
+                treeViewCollisions.CheckBoxes = false;  // disable checkBoxes in treeView
                 treeViewCollisions.ExpandAll();
             }
             else
@@ -2139,7 +1840,7 @@ namespace foldersCompare_Verification
                 labelDarkOrange.Visible = true;
                 labelBlue.Visible = true;
                 labelGreen.Visible = true;
-                treeViewCollisions.CheckBoxes = true;
+                treeViewCollisions.CheckBoxes = true;   // enable checkBoxes in treeView
                 treeViewCollisions.ExpandAll();
             }
         }
@@ -2164,8 +1865,7 @@ namespace foldersCompare_Verification
                 resolveAction = 1;
                 if (treeViewPopulated)
                 {
-                    setResolveAction(1);
-                    //textBoxSourceBuilder();
+                    setResolveAction(resolveAction);
                     if (checkBoxCustomSettings.Checked)
                         setNodeColor(resolveAction); // set the color for current node
                 }
@@ -2180,8 +1880,7 @@ namespace foldersCompare_Verification
                 resolveAction = 2;
                 if (treeViewPopulated)
                 {
-                    setResolveAction(2);
-                    //textBoxSourceBuilder();
+                    setResolveAction(resolveAction);
                     if (checkBoxCustomSettings.Checked)
                         setNodeColor(resolveAction); // set the color for current node
                 }
@@ -2196,8 +1895,7 @@ namespace foldersCompare_Verification
                 resolveAction = 3;
                 if (treeViewPopulated)
                 {
-                    setResolveAction(3);
-                    //textBoxSourceBuilder();
+                    setResolveAction(resolveAction);
                     if (checkBoxCustomSettings.Checked)
                         setNodeColor(resolveAction); // set the color for current node
                 }
@@ -2212,8 +1910,7 @@ namespace foldersCompare_Verification
                 resolveAction = 4;
                 if (treeViewPopulated)
                 {
-                    setResolveAction(4);
-                    //textBoxSourceBuilder();
+                    setResolveAction(resolveAction);
                     if (checkBoxCustomSettings.Checked)
                         setNodeColor(resolveAction); // set the color for current node
                 }
