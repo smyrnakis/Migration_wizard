@@ -1036,7 +1036,7 @@ namespace foldersCompare_Verification
             }
 
             if (!checkAvailableSpace(totalCopySizeBytes))
-                MessageBox.Show("There is NO free space!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("There is NO free space!\n\r\n\rProceed at your own risk!!!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             /*else
                 MessageBox.Show("There is available free space!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);*/
         }
