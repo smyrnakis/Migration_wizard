@@ -333,8 +333,9 @@ namespace foldersCompare_Verification
         }
         // ---------------------------------------------------------------------------------------
 
-        // ----------------------------- Get dir size / free disk space -------------------------- <?><?><?><?><?><?><?><?><?><?><?><?><?><?><?><?><?><?>
-        private bool checkAvailableSpace([Optional] long copySize)
+        // ----------------------------- Get dir size / free disk space --------------------------
+        //private bool checkAvailableSpace([Optional] long copySize)
+        private bool checkAvailableSpace(long copySize)
         {
             if (copySize > 0)
             {
@@ -351,28 +352,6 @@ namespace foldersCompare_Verification
                 MessageBox.Show("Could not verify available free space!\r\n\r\nPlease contact with Apostolos.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
 
             return false;
-
-            /*
-            long sourceSize                 = 0;
-            long freeSpaceInDestination     = 0;
-
-            if (copyModeVanilla)
-            {
-                sourceSize = getDirSize(new DirectoryInfo(sourceDirectory));
-                freeSpaceInDestination = getFreeSpace(destinationDirectory);
-            }
-            else
-            {
-                return true;    // TEMP TEMP TEMP TEMP TEMP need to find way to check size of commonFiles IEnumerable !!!!!!
-            }
-
-            if ((freeSpaceInDestination - sourceSize) > 0)
-                return true;
-            else
-                MessageBox.Show("You still need " + editedSizeString(Math.Abs(freeSpaceInDestination - sourceSize)), "Not enough free space", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
-
-            return false;
-            */
         }
 
         // ~ calculate directory size in Bytes
@@ -702,7 +681,6 @@ namespace foldersCompare_Verification
                                 }
                                 break;
                             case 4:         // keep both (rename source)
-                                //string pathFileToBeCopied = destinationDir + file_name.Substring(sourceDir.Length);
                                 if (!File.Exists(fullDestinationPath))
                                 {
                                     // keep track of source/destination files that operations were applied on
@@ -849,10 +827,16 @@ namespace foldersCompare_Verification
                     textBoxDestinationDetails.Clear();
                 });
 
-                DialogResult dialogResult = MessageBox.Show("tempFilesIgnoredCountCheck\t\t: " + tempFilesIgnoredCountCheck + "\r\n" +
+                /*DialogResult dialogResult = MessageBox.Show("tempFilesIgnoredCountCheck\t\t: " + tempFilesIgnoredCountCheck + "\r\n" +
                                                             "tempFilesCommonCountCheck\t: " + tempFilesCommonCountCheck, "Are the numbers equal?", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
                 if (dialogResult == DialogResult.Yes)
+                {
                     return returnValueMixedCopy;
+                }*/
+                if (tempFilesIgnoredCountCheck == tempFilesCommonCountCheck)
+                {
+                    return returnValueMixedCopy;
+                }
                 else
                 {
                     MessageBox.Show("Files did not copied successfully...", "Opa!! Hopla!! Oups!!", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -1639,7 +1623,8 @@ namespace foldersCompare_Verification
             if (isDirectory)    // Actions when selected is DIRECTORY
             {
                 textBoxSourceDetails.Clear();
-                textBoxDestinationDetails.Clear();
+                if(!copyModeVanilla)
+                    textBoxDestinationDetails.Clear();
 
                 CheckAllChildNodes(treeViewCollisions.SelectedNode, true, resolveAction);
             }
