@@ -46,6 +46,7 @@
             this.expandAllToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.verifySourcedestinationToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.verifySourcedestinationinDepthToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.debuggingMsgBoxesToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.helpToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.generalInfoToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.sourceDestinationDirectoriesToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -194,7 +195,8 @@
             this.invertSelectionToolStripMenuItem,
             this.expandAllToolStripMenuItem,
             this.verifySourcedestinationToolStripMenuItem,
-            this.verifySourcedestinationinDepthToolStripMenuItem});
+            this.verifySourcedestinationinDepthToolStripMenuItem,
+            this.debuggingMsgBoxesToolStripMenuItem});
             this.optionsToolStripMenuItem.Name = "optionsToolStripMenuItem";
             this.optionsToolStripMenuItem.Size = new System.Drawing.Size(61, 20);
             this.optionsToolStripMenuItem.Text = "Options";
@@ -237,6 +239,13 @@
             this.verifySourcedestinationinDepthToolStripMenuItem.Size = new System.Drawing.Size(260, 22);
             this.verifySourcedestinationinDepthToolStripMenuItem.Text = "Verify source-destination (in depth)";
             this.verifySourcedestinationinDepthToolStripMenuItem.Click += new System.EventHandler(this.verifySourcedestinationinDepthToolStripMenuItem_Click);
+            // 
+            // debuggingMsgBoxesToolStripMenuItem
+            // 
+            this.debuggingMsgBoxesToolStripMenuItem.Name = "debuggingMsgBoxesToolStripMenuItem";
+            this.debuggingMsgBoxesToolStripMenuItem.Size = new System.Drawing.Size(260, 22);
+            this.debuggingMsgBoxesToolStripMenuItem.Text = "Debugging msgBoxes";
+            this.debuggingMsgBoxesToolStripMenuItem.Click += new System.EventHandler(this.debuggingMsgBoxesToolStripMenuItem_Click);
             // 
             // helpToolStripMenuItem
             // 
@@ -661,6 +670,7 @@
         private System.ComponentModel.BackgroundWorker backgroundWorkerResolve;
         private System.IO.FileSystemWatcher fileSystemWatcher1;
         private System.Windows.Forms.ToolStripMenuItem verifySourcedestinationToolStripMenuItem1;
+        private System.Windows.Forms.ToolStripMenuItem debuggingMsgBoxesToolStripMenuItem;
     }
 }
 

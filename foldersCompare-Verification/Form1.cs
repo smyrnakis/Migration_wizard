@@ -1,7 +1,26 @@
-﻿using System;
+﻿/**************************************************************************************
+    Migration_wizard
+    Copyright (C) 2017  Apostolos Smyrnakis - IT/CDA/AD - apostolos.smyrnakis@cern.ch
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ **************************************************************************************/
+
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -17,11 +36,13 @@ namespace foldersCompare_Verification
     public partial class Form1 : Form
     {
         // -------------------------------------- Variables --------------------------------------
-        string sourceDirectory          = "";
-        string destinationDirectory     = "";
+        string sourceDirectory          = "\\";
+        string destinationDirectory     = "\\";
         string destSuffix               = "_synced_";   // date and time is added later
 
-        bool bypassCancel               = false;        // used to temporarily cancel click cancellation event in treeView
+        bool bypassCheckCancel          = false;        // used to temporarily cancel click cancellation event in treeView
+        bool cancelBgw                  = false;        // used internally to cancel loops in case of "abort" pressed
+
         bool comparingRunning           = false;
         bool resolveRunning             = false;
         bool verificationRunning        = false;
@@ -45,13 +66,23 @@ namespace foldersCompare_Verification
         string md5Sour                  = null;         // used in MD5 hash checks
         string md5Dest                  = null;
 
+        bool showDebugs                 = false;        // show DEBUG messageBoxes
+
+        // --------------------- Stopwatches --------------------- 
+        //Stopwatch SW_verifyToolStripFast    = new Stopwatch();
+        Stopwatch SW_verifyToolStripDepth   = new Stopwatch();
+        Stopwatch SW_comparing              = new Stopwatch();
+        Stopwatch SW_copying                = new Stopwatch();
+        Stopwatch SW_veryfing               = new Stopwatch();
+
         // ------------------ Lists declaration ------------------
         // - source/destination files
         IEnumerable<FileInfo> sourceList;
         IEnumerable<FileInfo> destinationList;
+        
         // - common files in source/destination
-        //IEnumerable<FileInfo> commonFiles;
         List<CollidingFile> comFiles = new List<CollidingFile>();
+        
         // - source/destination files that operations were applied on
         List<string> affectedSourceFiles = new List<string>();
         List<string> affectedDestinationFiles = new List<string>();
@@ -61,22 +92,31 @@ namespace foldersCompare_Verification
         public Form1()
         {
             InitializeComponent();
-            textBoxSource.Text = Properties.Settings.Default["lastSourceDir"].ToString();               // Load last source directory
-            sourceDirectory = textBoxSource.Text;
-            textBoxDestination.Text = Properties.Settings.Default["lastDestinationDir"].ToString();     // Load last destination directory
-            destinationDirectory = textBoxDestination.Text;
-            labelRed.Visible = false;
-            labelDarkOrange.Visible = false;
-            labelBlue.Visible = false;
-            labelGreen.Visible = false;
-            buttonResolve.Enabled = false;                              // Disable Resolve button until folder compare
-            buttonCompare.Enabled = false;                              // Keep button disabled, unless corect path given
+            textBoxSource.Text                  = Properties.Settings.Default["lastSourceDir"].ToString();      // Load last source directory
+            sourceDirectory                     = textBoxSource.Text;
+            textBoxDestination.Text             = Properties.Settings.Default["lastDestinationDir"].ToString(); // Load last destination directory
+            destinationDirectory                = textBoxDestination.Text;
+            labelRed.Visible                    = false;
+            labelDarkOrange.Visible             = false;
+            labelBlue.Visible                   = false;
+            labelGreen.Visible                  = false;
+            buttonResolve.Enabled               = false;                // Disable Resolve button until folder compare
+            buttonCompare.Enabled               = false;                // Keep button disabled, unless corect path given
+
+            radioButtonKeepBoth.Checked         = true;                 // Default: Keep both source & destination files
+            checkBoxApplyAll.Checked            = true;                 // Default: apply changes to all colliding files
+            radioButtonKeepSource.Enabled       = false;
+            radioButtonKeepDestination.Enabled  = false;
+            radioButtonKeepRecent.Enabled       = false;
+            radioButtonKeepBoth.Enabled         = false;
+            checkBoxApplyAll.Enabled            = false;
+            checkBoxCustomSettings.Enabled      = false;
+
             treeViewCollisions.Nodes.Clear();                           // clear TreeView
-            treeViewCollisions.PathSeparator = @"\";
+            treeViewCollisions.PathSeparator    = @"\";
             SetTreeViewTheme(treeViewCollisions.Handle);
-            radioButtonKeepBoth.Checked = true;                         // Default: Keep both source & destination files
-            checkBoxApplyAll.Checked = true;                            // Default: apply changes to all colliding files
-            progressBar1.MarqueeAnimationSpeed = 10;                    // Set moving speed for progressBar
+
+            progressBar1.MarqueeAnimationSpeed  = 10;                   // Set moving speed for progressBar
             progressBar1.Style = ProgressBarStyle.Continuous;           // Disable progressBar movement
             checkLoadedPaths();                                         // Check if pre-loaded paths exist
         }
@@ -98,87 +138,111 @@ namespace foldersCompare_Verification
         long FreeBytesAvailable;
         long TotalNumberOfBytes;
         long TotalNumberOfFreeBytes;
+
+        // Custom exception thrown when user terminates execution
+        public class TerminatedByUserException : Exception
+        {
+            public TerminatedByUserException(string message)
+                : base(message)
+            {
+            }
+        }
         // ---------------------------------------------------------------------------------------
 
         // ----------------------------------- Restore functions ---------------------------------
-        public void restoreAfterCompare()
-        {
-            comparingRunning = false;
-            if (comparingDone)
-                buttonResolve.Enabled = true;
-            sourceLoaderException = destinationLoaderException = comparingFilesException = false;
-            buttonCompare.Text = "C O M P A R E";
-            buttonCompare.ForeColor = System.Drawing.Color.ForestGreen;
-            progressBar1.Style = ProgressBarStyle.Continuous;
-            Cursor.Current = Cursors.Default;
-
-            textBoxSource.Enabled = true;
-            textBoxDestination.Enabled = true;
-            buttonSource.Enabled = true;
-            buttonDestination.Enabled = true;
-        }
         public void restoreAfterResolve()
         {
-            resolveRunning = false;
-            buttonCompare.Enabled = true;
-            textBoxSource.ReadOnly = false;
-            textBoxDestination.ReadOnly = false;
-            buttonSource.Enabled = true;
-            buttonDestination.Enabled = true;
-            checkBoxApplyAll.Enabled = true;
-            checkBoxCustomSettings.Enabled = true;
-            treeViewPopulated = false;
-            //radioButtonKeepSource.Enabled = true;
-            //radioButtonKeepDestination.Enabled = true;
-            //radioButtonKeepRecent.Enabled = true;
-            //radioButtonKeepBoth.Enabled = true;
-            //textBoxDestinationDetails.Clear();
-            buttonResolve.Text = "R E S O L V E";
-            buttonResolve.ForeColor = System.Drawing.Color.RoyalBlue;
-            progressBar1.Style = ProgressBarStyle.Continuous;
-            Cursor.Current = Cursors.Default;
+            resolveRunning                  = false;
+            buttonCompare.Enabled           = true;
+            textBoxSource.Enabled           = true;
+            textBoxDestination.Enabled      = true;
+            buttonSource.Enabled            = true;
+            buttonDestination.Enabled       = true;
+            treeViewPopulated               = false;
+            destSuffix                      = "_synced_";
+
+            buttonResolve.Text              = "R E S O L V E";
+            buttonResolve.ForeColor         = System.Drawing.Color.RoyalBlue;
+            progressBar1.Style              = ProgressBarStyle.Continuous;
+            Cursor.Current                  = Cursors.Default;
+        }
+        public void restoreAfterCompare()
+        {
+            comparingRunning            = false;
+            if (comparingDone)
+                buttonResolve.Enabled   = true;
+            
+            buttonCompare.Text          = "C O M P A R E";
+            buttonCompare.ForeColor     = System.Drawing.Color.ForestGreen;
+            progressBar1.Style          = ProgressBarStyle.Continuous;
+            Cursor.Current              = Cursors.Default;
+
+            textBoxSource.Enabled       = true;
+            textBoxDestination.Enabled  = true;
+            buttonSource.Enabled        = true;
+            buttonDestination.Enabled   = true;
+
+            textBoxSourceDetails.TextAlign      = HorizontalAlignment.Left;
+            textBoxDestinationDetails.TextAlign = HorizontalAlignment.Left;
+
+            sourceLoaderException = destinationLoaderException = comparingFilesException = false;
         }
         public void resetSettings()
         {
-            treeViewCollisions.Nodes.Clear();
-            comparingDone = false;
-            buttonResolve.Enabled = false;
-            textBoxSourceDetails.Clear();
-            textBoxDestinationDetails.Clear();
-            
-            radioButtonKeepSource.Enabled = true;
-            radioButtonKeepDestination.Enabled = true;
-            radioButtonKeepRecent.Enabled = true;
-            radioButtonKeepBoth.Enabled = true;
-            checkBoxApplyAll.Enabled = true;
-            checkBoxCustomSettings.Enabled = true;
-            labelConflicts.Text = "File conflicts :";
-            labelDestInfo.Enabled = true;
+            totalCopySizeBytes                  = 0;
+            comparingDone                       = false;
+            buttonResolve.Text                  = "R E S O L V E";
+            buttonResolve.Enabled               = false;
+            labelDestInfo.Enabled               = true;
+            labelConflicts.Text                 = "File conflicts :";
 
-            textBoxSourceDetails.TextAlign = HorizontalAlignment.Left;
-
-            textBoxDestinationDetails.Enabled = true;
+            textBoxDestinationDetails.Enabled   = true;
+            textBoxSourceDetails.TextAlign      = HorizontalAlignment.Left;
             textBoxDestinationDetails.TextAlign = HorizontalAlignment.Left;
 
-            totalCopySizeBytes = 0;
+            verifySourcedestinationToolStripMenuItem.Enabled        = true;
+            verifySourcedestinationinDepthToolStripMenuItem.Enabled = true;
 
             // --- Clearing lists content ---
+            treeViewCollisions.Nodes.Clear();
+            textBoxSourceDetails.Clear();
+            textBoxDestinationDetails.Clear();
+            // - - - - - - - - - - - - - - - 
             comFiles.Clear();
             affectedSourceFiles.Clear();
             affectedDestinationFiles.Clear();
             // ------------------------------
+
+            radioButtonKeepSource.Enabled       = false;
+            radioButtonKeepDestination.Enabled  = false;
+            radioButtonKeepRecent.Enabled       = false;
+            radioButtonKeepBoth.Enabled         = false;
+            checkBoxApplyAll.Enabled            = false;
+            checkBoxCustomSettings.Enabled      = false;
+
+            SW_verifyToolStripDepth.Stop();
+            SW_verifyToolStripDepth.Reset();
+            SW_comparing.Stop();
+            SW_comparing.Reset();
+            SW_copying.Stop();
+            SW_copying.Reset();
+            SW_veryfing.Stop();
+            SW_veryfing.Reset();
+
+            cancelBgw                           = false;                    // needs a small delay maybe!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         }
-        
+
         // --------------------- Loading-saving source/destination directories ------------------- 
         // Folder browser: Source
         private void buttonSource_Click(object sender, EventArgs e)
         {
-            sourceLoaded = false;
-            textBoxSource.ForeColor = System.Drawing.Color.Red;
             if (folderBrowserDialogSource.ShowDialog() == DialogResult.OK)
             {
                 cancelBackgroundWorkers();
-                resetSettings();
+                sourceLoaded = false;
+                textBoxSource.ForeColor = System.Drawing.Color.Red;
+                resetSettings();   
+
                 try
                 {
                     textBoxSource.Text = folderBrowserDialogSource.SelectedPath + "\\";
@@ -196,12 +260,13 @@ namespace foldersCompare_Verification
         // Folder browser: Destination
         private void buttonDestination_Click(object sender, EventArgs e)
         {
-            destinationLoaded = false;
-            textBoxDestination.ForeColor = System.Drawing.Color.Red;
             if (folderBrowserDialogDestination.ShowDialog() == DialogResult.OK)
             {
                 cancelBackgroundWorkers();
+                destinationLoaded = false;
+                textBoxDestination.ForeColor = System.Drawing.Color.Red;
                 resetSettings();
+                
                 try
                 {
                     textBoxDestination.Text = folderBrowserDialogDestination.SelectedPath + "\\";
@@ -220,9 +285,9 @@ namespace foldersCompare_Verification
         private void textBoxSource_TextChanged(object sender, EventArgs e)
         {
             cancelBackgroundWorkers();
-            resetSettings();
             sourceLoaded = false;
             textBoxSource.ForeColor = System.Drawing.Color.Red;
+            resetSettings();
         }
         private void textBoxSource_Leave(object sender, EventArgs e)
         {
@@ -241,9 +306,9 @@ namespace foldersCompare_Verification
         private void textBoxDestination_TextChanged(object sender, EventArgs e)
         {
             cancelBackgroundWorkers();
-            resetSettings();
             destinationLoaded = false;
             textBoxDestination.ForeColor = System.Drawing.Color.Red;
+            resetSettings();
         }
         private void textBoxDestination_Leave(object sender, EventArgs e)
         {
@@ -260,8 +325,59 @@ namespace foldersCompare_Verification
         }
         // ---------------------------------------------------------------------------------------
 
+        // ------------------------- Verify source & directory paths exist ----------------------- 
+        private void checkLoadedPaths()
+        {
+            if (Directory.Exists(sourceDirectory))
+            {
+                sourceLoaded            = true;
+                textBoxSource.ForeColor = System.Drawing.Color.ForestGreen;
+                textBoxSource.Font      = new Font(textBoxSource.Font, FontStyle.Bold);
+            }
+            else
+            {
+                sourceLoaded            = false;
+                buttonCompare.Enabled   = false;
+                buttonResolve.Enabled   = false;
+                textBoxSource.ForeColor = System.Drawing.Color.Red;
+                textBoxSource.Font      = new Font(textBoxSource.Font, FontStyle.Regular);
+                verifySourcedestinationToolStripMenuItem.Enabled        = false;
+                verifySourcedestinationinDepthToolStripMenuItem.Enabled = false;
+                ActiveControl = buttonSource;
+                MessageBox.Show("Source directory does NOT exist!", "Error in source directory", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+
+            if (Directory.Exists(destinationDirectory))
+            {
+                destinationLoaded               = true;
+                textBoxDestination.ForeColor    = System.Drawing.Color.ForestGreen;
+                textBoxDestination.Font         = new Font(textBoxDestination.Font, FontStyle.Bold);
+            }
+            else
+            {
+                destinationLoaded               = false;
+                buttonCompare.Enabled           = false;
+                buttonResolve.Enabled           = false;
+                textBoxDestination.ForeColor    = System.Drawing.Color.Red;
+                textBoxDestination.Font         = new Font(textBoxDestination.Font, FontStyle.Regular);
+                verifySourcedestinationToolStripMenuItem.Enabled        = false;
+                verifySourcedestinationinDepthToolStripMenuItem.Enabled = false;
+                ActiveControl = buttonDestination;
+                MessageBox.Show("Destination directory does NOT exist!", "Error in destination directory", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+
+            if (sourceLoaded && destinationLoaded)
+            {
+                buttonCompare.Enabled                                   = true;
+                verifySourcedestinationToolStripMenuItem.Enabled        = true;
+                verifySourcedestinationinDepthToolStripMenuItem.Enabled = true;
+                //ActiveControl                                           = buttonCompare;
+            }
+        }
+        // ---------------------------------------------------------------------------------------
+
         // ------------------------- Updating textBoxes during operations ------------------------
-        private void updateTextBoxes(string srcFileProcessed, string dstFileProcessed)
+        public void updateTextBoxes(string srcFileProcessed, string dstFileProcessed)
         {
             if (resolveRunning)
             {
@@ -278,57 +394,6 @@ namespace foldersCompare_Verification
                     textBoxSourceDetails.Text = "Verifying files . . .";
                     textBoxDestinationDetails.Text = "Verifying file:\r\n" + srcFileProcessed + "\r\n\r\nagainst:\r\n" + dstFileProcessed;
                 });
-            }
-        }
-        // ---------------------------------------------------------------------------------------
-
-        // ------------------------- Verify source & directory paths exist ----------------------- 
-        private void checkLoadedPaths()
-        {
-            if (Directory.Exists(sourceDirectory))
-            {
-                sourceLoaded = true;
-                textBoxSource.ForeColor = System.Drawing.Color.ForestGreen;
-                textBoxSource.Font = new Font(textBoxSource.Font, FontStyle.Bold);
-            }
-            else
-            {
-                sourceLoaded = false;
-                verifySourcedestinationToolStripMenuItem.Enabled = false;
-                verifySourcedestinationinDepthToolStripMenuItem.Enabled = false;
-                buttonCompare.Enabled = false;
-                buttonResolve.Enabled = false;
-                textBoxSource.ForeColor = System.Drawing.Color.Red;
-                textBoxSource.Font = new Font(textBoxSource.Font, FontStyle.Regular);
-                ActiveControl = buttonSource;
-                MessageBox.Show("Source directory does NOT exist!", "Error in source directory", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-
-            if (Directory.Exists(destinationDirectory))
-            {
-                destinationLoaded = true;
-                textBoxDestination.ForeColor = System.Drawing.Color.ForestGreen;
-                textBoxDestination.Font = new Font(textBoxDestination.Font, FontStyle.Bold);
-            }
-            else
-            {
-                destinationLoaded = false;
-                verifySourcedestinationToolStripMenuItem.Enabled = false;
-                verifySourcedestinationinDepthToolStripMenuItem.Enabled = false;
-                buttonCompare.Enabled = false;
-                buttonResolve.Enabled = false;
-                textBoxDestination.ForeColor = System.Drawing.Color.Red;
-                textBoxDestination.Font = new Font(textBoxDestination.Font, FontStyle.Regular);
-                ActiveControl = buttonDestination;
-                MessageBox.Show("Destination directory does NOT exist!", "Error in destination directory", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-
-            if (sourceLoaded && destinationLoaded)
-            {
-                buttonCompare.Enabled = true;
-                verifySourcedestinationToolStripMenuItem.Enabled = true;
-                verifySourcedestinationinDepthToolStripMenuItem.Enabled = true;
-                ActiveControl = buttonCompare;
             }
         }
         // ---------------------------------------------------------------------------------------
@@ -403,32 +468,31 @@ namespace foldersCompare_Verification
                 MessageBox.Show(ex.Message, "Error getting free disk space!", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             if (!success)
-                throw new System.ComponentModel.Win32Exception();
+                throw new System.ComponentModel.Win32Exception("Error getting free disk space!");
             else
             {
-                //MessageBox.Show("Free Bytes Available:      " + FreeBytesAvailable + "\r\n\r\n" + "Free MBytes Available:      " + FreeBytesAvailable / 1024 / 1024 + "\r\n\r\n" + "Free GBytes Available:      " + FreeBytesAvailable / 1024 / 1024 / 1024);
-                //MessageBox.Show("Total Number Of Bytes:     " + TotalNumberOfBytes + "\r\n\r\n" + "Total Number Of MBytes:      " + TotalNumberOfBytes / 1024 / 1024 + "\r\n\r\n" + "Total Number Of GBytes:      " + TotalNumberOfBytes / 1024 / 1024 / 1024);
-                //MessageBox.Show("Total Number Of FreeBytes: " + TotalNumberOfFreeBytes + "\r\n\r\n" + "Total Number Of FreeMBytes:      " + TotalNumberOfFreeBytes / 1024 / 1024 + "\r\n\r\n" + "Total Number Of FreeGBytes:      " + TotalNumberOfFreeBytes / 1024 / 1024 / 1024);
+                //if (showDebugs) MessageBox.Show("Free Bytes Available:      " + FreeBytesAvailable + "\r\n\r\n" + "Free MBytes Available:      " + ((float)FreeBytesAvailable / 1024 / 1024).ToString("n2") + "\r\n\r\n" + "Free GBytes Available:      " + ((float)FreeBytesAvailable / 1024 / 1024 / 1024).ToString("n2"));
+                //if (showDebugs) MessageBox.Show("Total Number Of Bytes:     " + TotalNumberOfBytes + "\r\n\r\n" + "Total Number Of MBytes:      " + ((float)TotalNumberOfBytes / 1024 / 1024).ToString("n2") + "\r\n\r\n" + "Total Number Of GBytes:      " + ((float)TotalNumberOfBytes / 1024 / 1024 / 1024).ToString("n2"));
+                //if (showDebugs) MessageBox.Show("Total Number Of FreeBytes: " + TotalNumberOfFreeBytes + "\r\n\r\n" + "Total Number Of FreeMBytes:      " + ((float)TotalNumberOfFreeBytes / 1024 / 1024).ToString("n2") + "\r\n\r\n" + "Total Number Of FreeGBytes:      " + ((float)TotalNumberOfFreeBytes / 1024 / 1024 / 1024).ToString("n2"));
                 return FreeBytesAvailable;
             }
         }
         // return sting in beautiful size unit (B or KB or MB or GB)
         private string editedSizeString(long sizeInBytes)
         {
-            string returnStr = "error";
+            if (sizeInBytes > 0 && sizeInBytes < 1024)
+                return sizeInBytes + " Bytes";
 
-            if (sizeInBytes <= 0)
-                returnStr = "*** ERROR ***";
-            else if (sizeInBytes > 0 && sizeInBytes < 1024)
-                returnStr = sizeInBytes + " Bytes";
             else if (sizeInBytes >= 1024 && sizeInBytes < 1048576)
-                returnStr = sizeInBytes / 1024 + " KBytes";
-            else if (sizeInBytes >= 1048576 && sizeInBytes < 1073741824)
-                returnStr = (sizeInBytes / 1024) / 1024 + " MBytes";
-            else
-                returnStr = ((sizeInBytes / 1024) / 1024) / 1024 + " GBytes";
+                return ((float)sizeInBytes / 1024).ToString("n2") + " KBytes";
 
-            return returnStr;
+            else if (sizeInBytes >= 1048576 && sizeInBytes < 1073741824)
+                return ((float)(sizeInBytes / 1024) / 1024).ToString("n2") + " MBytes";
+
+            else if (sizeInBytes >= 1073741824)
+                return ((float)((sizeInBytes / 1024) / 1024) / 1024).ToString("n2") + " GBytes";
+
+            return "*** ERROR ***";
         }
         // ---------------------------------------------------------------------------------------
 
@@ -442,34 +506,40 @@ namespace foldersCompare_Verification
             else if (comparingRunning)
             {
                 cancelBackgroundWorkers();
-                restoreAfterCompare();
-                treeViewCollisions.Nodes.Clear();
-                textBoxSourceDetails.Clear();
-                textBoxDestinationDetails.Clear();
+                
                 MessageBox.Show("Program terminated by the user!", "Message", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                restoreAfterCompare();
+                resetSettings();
             }
             else if (!comparingRunning)
             {
-                comparingRunning = true;
+                comparingRunning            = true;
+
                 resetSettings();
-                buttonCompare.ForeColor = System.Drawing.Color.Red;
-                buttonCompare.Text = "A B O R T";
-                textBoxSource.Enabled = false;
-                textBoxDestination.Enabled = false;
-                buttonSource.Enabled = false;
-                buttonDestination.Enabled = false;
+
+                SW_comparing.Reset();
+                SW_comparing.Start();
+
+                textBoxSource.Enabled       = false;
+                textBoxDestination.Enabled  = false;
+                buttonSource.Enabled        = false;
+                buttonDestination.Enabled   = false;
+                buttonCompare.ForeColor     = System.Drawing.Color.Red;
+                buttonCompare.Text          = "A B O R T";
                 
+                textBoxSourceDetails.TextAlign      = HorizontalAlignment.Center;
+                textBoxDestinationDetails.TextAlign = HorizontalAlignment.Center;
+
+                verifySourcedestinationToolStripMenuItem.Enabled        = false;
+                verifySourcedestinationinDepthToolStripMenuItem.Enabled = false;
+
                 backgroundWorkerCompareFiles.RunWorkerAsync();  // bgw compare files
-                
-                progressBar1.Style = ProgressBarStyle.Marquee;
-                Cursor.Current = Cursors.WaitCursor;
+
+                Cursor.Current      = Cursors.WaitCursor;
+                progressBar1.Style  = ProgressBarStyle.Marquee;
             }
-            else // Program should never enter here!
-            { 
-                cancelBackgroundWorkers();
-                restoreAfterCompare();
-                MessageBox.Show("Error! 'else' case executed in buttonCompare_Click!", "Critical Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            else
+                Environment.Exit(-1);   // Program should never enter here!
         }
         // ---------------------------------------------------------------------------------------
 
@@ -478,14 +548,17 @@ namespace foldersCompare_Verification
         {
             if (resolveRunning)
             {
+                //cancelBgw = true;
                 cancelBackgroundWorkers();
+
+                //treeViewCollisions.Nodes.Clear();
+                //textBoxSourceDetails.Clear();
+                //textBoxDestinationDetails.Clear();
+                MessageBox.Show("Program terminated by the user!", "Message", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                
                 restoreAfterCompare();
                 restoreAfterResolve();
-                treeViewCollisions.Nodes.Clear();
-                textBoxSourceDetails.Clear();
-                textBoxDestinationDetails.Clear();
-                MessageBox.Show("Program terminated by the user!", "Message", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
-                //cancelBackgroundWorkers();
+                resetSettings();
             }
             else if (!resolveRunning)
             {
@@ -493,20 +566,13 @@ namespace foldersCompare_Verification
                                                             "Data might be overwritten and lost in case of wrong settings!\r\n\r\n" + 
                                                             "Are you sure you want to continue?", "Disclaimer", 
                                                             MessageBoxButtons.YesNo, MessageBoxIcon.Exclamation, MessageBoxDefaultButton.Button2);
-                /*DialogResult dialogResult = MessageBox.Show("WARNING! You are about to perform critical operations on your files!\r\n" +
-                                                            "Data might be overwritten and lost in case of wrong settings!\r\n\r\n" + 
-                                                            "Write size : " + editedSizeString(totalCopySizeBytes) + "\r\n\r\n" +
-                                                            "Are you sure you want to continue?", "Disclaimer", 
-                                                            MessageBoxButtons.YesNo, MessageBoxIcon.Exclamation, MessageBoxDefaultButton.Button2);
-                */
                 if (dialogResult == DialogResult.No)                
                     return;
 
                 resolveRunning = true;
-                //treeViewPopulated = false;
                 buttonCompare.Enabled = false;
-                textBoxSource.ReadOnly = true;
-                textBoxDestination.ReadOnly = true;
+                textBoxSource.Enabled = false;
+                textBoxDestination.Enabled = false;
                 textBoxSourceDetails.Clear();
                 textBoxDestinationDetails.Clear();
                 buttonSource.Enabled = false;
@@ -519,15 +585,25 @@ namespace foldersCompare_Verification
                 radioButtonKeepBoth.Enabled = false;
                 buttonResolve.ForeColor = System.Drawing.Color.Red;
                 buttonResolve.Text = "A B O R T";
+                textBoxSourceDetails.TextAlign = HorizontalAlignment.Center;
+                textBoxDestinationDetails.TextAlign = HorizontalAlignment.Center;
+
                 progressBar1.Style = ProgressBarStyle.Marquee;
                 Cursor.Current = Cursors.WaitCursor;
 
                 copyResult = -1;    // 0: successful file copy , -1: exception thrown during copy (error) , >0: number of conflicts found (error)
+
+                verifySourcedestinationToolStripMenuItem.Enabled        = false;
+                verifySourcedestinationinDepthToolStripMenuItem.Enabled = false;
+
+                SW_copying.Reset();
+                SW_copying.Start();
+
                 backgroundWorkerResolve.RunWorkerAsync();
             }
         }
         // ---------------------------------------------------------------------------------------
-
+        
         // ----------------- Copy - paste when no collisions found (NO overwrite) ----------------
         private int copyFilesVanilla(string sourceDir, string destinationDir)
         {
@@ -537,12 +613,18 @@ namespace foldersCompare_Verification
                 // Create subdirectories in destination    
                 foreach (string dir in Directory.GetDirectories(sourceDir, "*", System.IO.SearchOption.AllDirectories))
                 {
+                    if (cancelBgw)
+                        throw new TerminatedByUserException("User cancel");
+
                     // removing destinationDir's absolute path
                     Directory.CreateDirectory(destinationDir + dir.Substring(sourceDir.Length));
                 }
 
                 foreach (string file_name in Directory.GetFiles(sourceDir, "*.*", System.IO.SearchOption.AllDirectories))
                 {
+                    if (cancelBgw)
+                        throw new TerminatedByUserException("User cancel");
+
                     string pathFileToBeCopied = destinationDir + file_name.Substring(sourceDir.Length);
                     if (!File.Exists(pathFileToBeCopied))
                     {
@@ -558,6 +640,10 @@ namespace foldersCompare_Verification
                     }
                 }
                 return returnValueVanillaCopy;
+            }
+            catch (TerminatedByUserException)
+            {
+                return -1;
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -576,14 +662,17 @@ namespace foldersCompare_Verification
         private int copyFilesMixed(string sourceDir, string destinationDir, List<CollidingFile> commFiles)
         {
             destSuffix += DateTime.Now.ToString("dd-M-yyyy_HH-mm");
-            int returnValueMixedCopy = 0;
-            int tempFilesIgnoredCountCheck = 0;
-            int tempFilesCommonCountCheck = 0;
+            int returnValueMixedCopy        = 0;
+            int tempFilesIgnoredCountCheck  = 0;
+            int tempFilesCommonCountCheck   = 0;
             try
             {
                 // Create subdirectories in destination    
                 foreach (string dir in Directory.GetDirectories(sourceDir, "*", System.IO.SearchOption.AllDirectories))
                 {
+                    if (cancelBgw)
+                        throw new TerminatedByUserException("User cancel");
+
                     Directory.CreateDirectory(destinationDir + dir.Substring(sourceDir.Length));
                 }
 
@@ -591,6 +680,9 @@ namespace foldersCompare_Verification
                 // copy every file from sourceList to destination directory, ONLY if the file don't exist already 
                 foreach (FileInfo fl_name in sourceList)
                 {
+                    if (cancelBgw)
+                        throw new TerminatedByUserException("User cancel");
+
                     string pathFileToBeCopied = destinationDir + (fl_name.FullName).Substring(sourceDir.Length);
                     if (!File.Exists(pathFileToBeCopied))
                     {
@@ -609,6 +701,9 @@ namespace foldersCompare_Verification
                 // ------------------ Resolving part -----------------
                 foreach (var node in Collect(treeViewCollisions.Nodes))
                 {
+                    if (cancelBgw)
+                        throw new TerminatedByUserException("User cancel");
+
                     var collFile = new foldersCompare_Verification.CollidingFile();
 
                     // Check every node's attribute (directory or file?)
@@ -822,17 +917,17 @@ namespace foldersCompare_Verification
                     }
                 }
 
-                BeginInvoke((MethodInvoker)delegate
+                BeginInvoke((MethodInvoker)delegate // OK
                 {
                     textBoxDestinationDetails.Clear();
                 });
 
-                /*DialogResult dialogResult = MessageBox.Show("tempFilesIgnoredCountCheck\t\t: " + tempFilesIgnoredCountCheck + "\r\n" +
-                                                            "tempFilesCommonCountCheck\t: " + tempFilesCommonCountCheck, "Are the numbers equal?", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
-                if (dialogResult == DialogResult.Yes)
-                {
-                    return returnValueMixedCopy;
-                }*/
+                //DialogResult dialogResult = MessageBox.Show("tempFilesIgnoredCountCheck\t\t: " + tempFilesIgnoredCountCheck + "\r\n" +
+                //                                            "tempFilesCommonCountCheck\t: " + tempFilesCommonCountCheck, "Are the numbers equal?", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+                //if (dialogResult == DialogResult.Yes)
+                //{
+                //    return returnValueMixedCopy;
+                //}
                 if (tempFilesIgnoredCountCheck == tempFilesCommonCountCheck)
                 {
                     return returnValueMixedCopy;
@@ -843,6 +938,10 @@ namespace foldersCompare_Verification
                     return -1;
                 }
                 // ---------------------------------------------------
+            }
+            catch (TerminatedByUserException)
+            {
+                return -1;
             }
             catch (UnauthorizedAccessException)
             {
@@ -856,7 +955,7 @@ namespace foldersCompare_Verification
             }
         }
         // ---------------------------------------------------------------------------------------
-
+        
         // --------------------------- Verify if coping was successful ---------------------------
         private void verifyFileCopy()
         {
@@ -865,7 +964,7 @@ namespace foldersCompare_Verification
             if (affectedSourceFiles.Count() != affectedDestinationFiles.Count())    // 1st check: source-destination lists count
             {
                 tempVerifyResult = -1;
-                MessageBox.Show("ATTENTION: Files did NOT copied successfully!\r\n\r\nMismatch in source-destination count.", "Error in veryfing files!", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("ATTENTION: Files did NOT copied successfully!\r\n\r\nMismatch in affected source-destination files count.", "Error in veryfing files!", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 verificationOK = false;
             }
             else
@@ -875,6 +974,9 @@ namespace foldersCompare_Verification
                     MD5 md5 = MD5.Create();
                     for (int i = 0; i < affectedSourceFiles.Count(); i++)
                     {
+                        if (cancelBgw)
+                            throw new TerminatedByUserException("User cancel");
+
                         FileInfo affSourInfo = new FileInfo(affectedSourceFiles[i]);
                         FileInfo affDestInfo = new FileInfo(affectedDestinationFiles[i]);
                         updateTextBoxes(affSourInfo.ToString(), affDestInfo.ToString());
@@ -890,6 +992,10 @@ namespace foldersCompare_Verification
                         }
                     }
                 }
+                catch (TerminatedByUserException)
+                {
+                    tempVerifyResult = -1;
+                }
                 catch (Exception ex)
                 {
                     tempVerifyResult = -1;
@@ -897,6 +1003,12 @@ namespace foldersCompare_Verification
                     verificationOK = verificationRunning = false;
                 }
             }
+
+            BeginInvoke((MethodInvoker)delegate // OK
+            {
+                textBoxSourceDetails.Clear();
+                textBoxDestinationDetails.Clear();
+            });
 
             if (tempVerifyResult == 1)
             {
@@ -912,10 +1024,17 @@ namespace foldersCompare_Verification
         }
         // ---------------------------------------------------------------------------------------
 
+        // ----------------------------- Check if IEnumerable is empty ---------------------------
+        public static bool IsNullOrEmpty<T>(IEnumerable<T> enumerable)
+        {
+            //return enumerable == null;    // does NOT work correctly!!!
+            return enumerable == null || !enumerable.Any();
+        }
+        // ---------------------------------------------------------------------------------------
+
         // ----------------------------------- File comparison ----------------------------------
         private void dirsComparison(string sourceDir, string destinationDir)
         {
-            //long totalFileSizeBytes = 0;
             treeViewCollisions.Nodes.Clear();
 
             try
@@ -925,21 +1044,19 @@ namespace foldersCompare_Verification
 
                 sourceList      = dirSource.GetFiles("*.*", SearchOption.AllDirectories);
                 destinationList = dirDestination.GetFiles("*.*", SearchOption.AllDirectories);
-                
+
                 // -------------------------- FOR DEBUG --------------------------
                 /*foreach (var sl in sourceList)
                 {
-                    MessageBox.Show("Name:                  " + sl.Name 
-                        + "\r\n\r\nFullName:              " + sl.FullName 
-                        + "\r\n\r\nDirectoryName:         " + sl.DirectoryName 
-                        + "\r\n\r\nDirectory.ToString():  " + sl.Directory.ToString(), "sourceList");
+                    MessageBox.Show("Name :\t\t " + sl.Name 
+                        + "\r\n\r\nFullName :\t " + sl.FullName 
+                        + "\r\n\r\nDirectoryName :\t " + sl.DirectoryName, "sourceList");
                 }
                 foreach (var dl in destinationList)
                 {
-                    MessageBox.Show("Name:                  " + dl.Name 
-                        + "\r\n\r\nFullName:              " + dl.FullName 
-                        + "\r\n\r\nDirectoryName:         " + dl.DirectoryName 
-                        + "\r\n\r\nDirectory.ToString():  " + dl.Directory.ToString(), "destinationList");
+                    MessageBox.Show("Name :\t\t " + dl.Name 
+                        + "\r\n\r\nFullName :\t " + dl.FullName 
+                        + "\r\n\r\nDirectoryName :\t " + dl.DirectoryName, "destinationList");
                 }*/
                 // ---------------------------------------------------------------
 
@@ -949,13 +1066,17 @@ namespace foldersCompare_Verification
                 // Check for common files between source & destination (by file name only! Not by length, createDate etc)
                 IEnumerable<FileInfo> commonFiles = sourceList.Intersect(destinationList, myFileCompareName);
 
-                if (commonFiles.Count() > 0)
+                //if (commonFiles.Count() > 0)
+                if (!IsNullOrEmpty(commonFiles))
                 {
                     copyModeVanilla = false;  // --> copyFilesMixed() (vanilla for all, copyFilesResolving for conflicts)
                     MessageBox.Show("Conflicts found! Please select resolve action for each file.", "Conflicts found", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
-                    
+
                     foreach (FileInfo cf in commonFiles)
                     {
+                        if (cancelBgw)
+                            throw new TerminatedByUserException("User cancel");
+
                         string tempCFfullName       = cf.FullName;
                         long fileSizeBytes          = cf.Length;
                         string tempPathToDest       = destinationDirectory + tempCFfullName.Substring(sourceDirectory.Length);
@@ -963,35 +1084,58 @@ namespace foldersCompare_Verification
 
                         totalCopySizeBytes          += fileSizeBytes;
 
+                        BeginInvoke((MethodInvoker)delegate
+                        {
+                            textBoxSourceDetails.Text = "Processing file :\r\n" + cf.FullName;
+                            textBoxDestinationDetails.Text = "Processed files' size : " + editedSizeString(totalCopySizeBytes);
+                        });
+                        
                         comFiles.Add(new CollidingFile { file = cf, PathToSource = tempCFfullName, PathToDestination = tempPathToDest, nodePath = pathOfNode, resolveAction = resolveAction, sourceFileSize = fileSizeBytes });
                     }
 
-                    PopulateTreeView(treeViewCollisions, comFiles, '\\');
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        PopulateTreeView(treeViewCollisions, comFiles, '\\');
+                        treeViewCollisions.ExpandAll();
 
-                    treeViewCollisions.ExpandAll();
+                        textBoxSourceDetails.Clear();
+                        textBoxDestinationDetails.Clear();
+                        radioButtonKeepSource.Enabled       = true;
+                        radioButtonKeepDestination.Enabled  = true;
+                        radioButtonKeepRecent.Enabled       = true;
+                        radioButtonKeepBoth.Enabled         = true;
+                        checkBoxApplyAll.Enabled            = true;
+                        checkBoxCustomSettings.Enabled      = true;
+                        buttonResolve.Text                  = "R E S O L V E";
+                        labelConflicts.Text                 = "File conflicts : " + commonFiles.Count().ToString() + " / Size: " + editedSizeString(totalCopySizeBytes);
+                    });
+                    
                     treeViewPopulated = true;
-                    //labelConflicts.Text = "File conflicts : " + "(" + commonFiles.Count().ToString() + ")";
-                    labelConflicts.Text = "File conflicts : " + commonFiles.Count().ToString() + " / Size: " + editedSizeString(totalCopySizeBytes);
                 }
                 else   // No common files found. --> enable "vanillaCopy" option (copy everything from source to destination without replace)
                 {
                     copyModeVanilla = true;   // --> copyFilesVanilla()
                     MessageBox.Show("There are no common files between the two directories.", "No common files found (compared by name)!", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        
-                    radioButtonKeepSource.Enabled       = false;
-                    radioButtonKeepDestination.Enabled  = false;
-                    radioButtonKeepRecent.Enabled       = false;
-                    radioButtonKeepBoth.Enabled         = false;
-                    checkBoxApplyAll.Enabled            = false;
-                    checkBoxCustomSettings.Enabled      = false;
-                    //labelConflicts.Text = "Files to copy : " + "(" + sourceList.Count().ToString() + ")";
-                    labelDestInfo.Enabled               = false;
-                    textBoxDestinationDetails.Text      = "All source files will be copied to destination directory!";
-                    textBoxDestinationDetails.TextAlign = HorizontalAlignment.Center;
-                    textBoxDestinationDetails.Enabled   = false;
-                    
+
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        radioButtonKeepSource.Enabled       = false;
+                        radioButtonKeepDestination.Enabled  = false;
+                        radioButtonKeepRecent.Enabled       = false;
+                        radioButtonKeepBoth.Enabled         = false;
+                        checkBoxApplyAll.Enabled            = false;
+                        checkBoxCustomSettings.Enabled      = false;
+                        labelDestInfo.Enabled               = false;
+                        textBoxDestinationDetails.Text      = "All source files will be copied to destination directory!";
+                        textBoxDestinationDetails.TextAlign = HorizontalAlignment.Center;
+                        textBoxDestinationDetails.Enabled   = false;
+                    });
+
                     foreach (FileInfo sl in sourceList)
                     {
+                        if (cancelBgw)
+                            throw new TerminatedByUserException("User cancel");
+
                         string tempCFfullName       = sl.FullName;
                         long fileSizeBytes          = sl.Length;
                         string tempPathToDest       = destinationDirectory + tempCFfullName.Substring(sourceDirectory.Length);
@@ -999,17 +1143,33 @@ namespace foldersCompare_Verification
 
                         totalCopySizeBytes          += fileSizeBytes;
 
+                        BeginInvoke((MethodInvoker)delegate
+                        {
+                            textBoxSourceDetails.Text = "Processing file :\r\n" + sl.FullName;
+                            textBoxDestinationDetails.Text = "Processed files' size : " + editedSizeString(totalCopySizeBytes);
+                        });
+
                         comFiles.Add(new CollidingFile { file = sl, PathToSource = tempCFfullName, PathToDestination = tempPathToDest, nodePath = pathOfNode, resolveAction = resolveAction, sourceFileSize = fileSizeBytes });
                     }
 
-                    labelConflicts.Text = "Files to copy : " + sourceList.Count().ToString() + " / Size: " + editedSizeString(totalCopySizeBytes);
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        PopulateTreeView(treeViewCollisions, comFiles, '\\');
+                        treeViewCollisions.ExpandAll();
 
-                    PopulateTreeView(treeViewCollisions, comFiles, '\\');
+                        textBoxSourceDetails.Clear();
+                        textBoxDestinationDetails.Clear();
+
+                        buttonResolve.Text  = "C O P Y FILES";
+                        labelConflicts.Text = "Files to copy : " + sourceList.Count().ToString() + " / Size: " + editedSizeString(totalCopySizeBytes);
+                    });
                     
-                    treeViewCollisions.ExpandAll();
                     treeViewPopulated = true;
-                    buttonResolve.Text = "C O P Y FILES";
                 }
+            }
+            catch (TerminatedByUserException)
+            {
+                resetSettings();    //<?><?><?><?><?><?><?><?><?><?><?><?><?> NEEDED ???????????????????
             }
             catch (Exception ex)
             {
@@ -1018,11 +1178,13 @@ namespace foldersCompare_Verification
                 else
                     MessageBox.Show("Exception: " + ex.Message + "\r\n\r\nInnerException message: " + ex.InnerException.Message + "\r\n\r\n InnerException: " + ex.InnerException.ToString() + "\r\n\r\n" + "copyModeVanilla: " + copyModeVanilla.ToString(), "Error in dirsComparison", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-
+            
             if (!checkAvailableSpace(totalCopySizeBytes))
                 MessageBox.Show("There is NO free space!\n\r\n\rProceed at your own risk!!!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             /*else
                 MessageBox.Show("There is available free space!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);*/
+
+            if (showDebugs) MessageBox.Show("Checking free space --> DONE", "End of dirsComparison");                     // FOR DEBUG !!!
         }
 
         // Compare files by: name
@@ -1036,12 +1198,12 @@ namespace foldersCompare_Verification
 
                 string tempF1 = f1.FullName.Substring(frm1.sourceDirectory.Length);
                 string tempF2 = f2.FullName.Substring(frm1.destinationDirectory.Length);
-                
+
                 // -------------------------- FOR DEBUG --------------------------
                 /*MessageBox.Show("► tempF1:\r\n" + tempF1 + "\r\n\r\n" + "f1.FullName:\r\n" + f1.FullName + "\r\n\r\n" + "tempF1.ToLower():\r\n" + tempF1.ToLower() 
                                 + "\r\n\r\n\r\n\r\n" +
                                 "► tempF2:\r\n" + tempF2 + "\r\n\r\n" + "f2.FullName:\r\n" + f2.FullName + "\r\n\r\n" + "tempF2.ToLower():\r\n" + tempF2.ToLower()
-                                , equal.ToString());*/
+                                , (tempF1.ToLower() == tempF2.ToLower()).ToString());*/
 
                 //MessageBox.Show(tempF1.ToLower() + "\r\n\r\n" + tempF2.ToLower(), "tempF1.ToLower() + tempF2.ToLower()");     // for debug !!!
                 // ---------------------------------------------------------------
@@ -1093,6 +1255,9 @@ namespace foldersCompare_Verification
                 subPathAgg = string.Empty;
                 foreach (string subPath in (relativePath).Split(pathSeparator))
                 {
+                    if (cancelBgw)
+                        throw new TerminatedByUserException("User cancel");
+
                     subPathAgg += subPath + pathSeparator;
                     TreeNode[] nodes = treeView.Nodes.Find(subPathAgg, true);
                     if (nodes.Length == 0)
@@ -1110,7 +1275,7 @@ namespace foldersCompare_Verification
         }
 
         // Getting all nodes in the treeview
-        IEnumerable<TreeNode> Collect(TreeNodeCollection nodes)
+        public IEnumerable<TreeNode> Collect(TreeNodeCollection nodes)
         {
             foreach (TreeNode node in nodes)
             {
@@ -1176,10 +1341,6 @@ namespace foldersCompare_Verification
         {
             if (!backgroundWorkerMD5.CancellationPending)
             {
-                BeginInvoke((MethodInvoker)delegate
-                {
-                    verifySourcedestinationinDepthToolStripMenuItem.Enabled = false;
-                });
                 md5Sour = md5Generator4Folder(sourceDirectory);
                 md5Dest = md5Generator4Folder(destinationDirectory);
             }
@@ -1192,74 +1353,71 @@ namespace foldersCompare_Verification
         }
         private void backgroundWorkerMD5_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
-            // -------------------------- FOR DEBUG --------------------------
-            //textBoxDestinationDetails.Text = "Source directory MD5:       ";
-            //textBoxDestinationDetails.Text += md5Sour;
-            //textBoxDestinationDetails.Text += "\r\n\r\nDestination directory MD5: ";
-            //textBoxDestinationDetails.Text += md5Dest;
-            // ---------------------------------------------------------------
             int compResult = string.Compare(md5Sour, md5Dest);
+
+            SW_verifyToolStripDepth.Stop();
+            TimeSpan runTimeVerifyDepth = SW_verifyToolStripDepth.Elapsed;
+            SW_verifyToolStripDepth.Reset();
+            
+            string beautifulTime = string.Format("{0:D2}h:{1:D2}m:{2:D2}s", runTimeVerifyDepth.Hours, runTimeVerifyDepth.Minutes, runTimeVerifyDepth.Seconds);
+
             switch (string.Compare(md5Sour, md5Dest))
             {
                 case 0:
-                    MessageBox.Show("The two folders are the same! ☺\n\r\n\rMD5 hash: " + md5Sour, "MD5 comparison result", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("The two folders are the same! ☺\n\r\n\rMD5 hash:\t" + md5Sour 
+                                    + "\r\n\r\nExecution time: " + beautifulTime, 
+                                    "MD5 comparison result", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     break;
                 default:
-                    MessageBox.Show("The two folders are NOT the same! ☹\n\r\n\rSource directory MD5:         " + md5Sour + "\r\nDestination directory MD5: " + md5Dest, "MD5 comparison result", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                    MessageBox.Show("The two folders are NOT the same! ☹\n\r\n\rSource directory MD5:\t" + md5Sour 
+                                    + "\r\nDestination directory MD5:\t" + md5Dest
+                                    + "\r\n\r\nExecution time: " + beautifulTime,
+                                    "MD5 comparison result", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
                     break;
             }
-            md5Sour = md5Dest = null;
-            BeginInvoke((MethodInvoker)delegate
-            {
-                progressBar1.Style = ProgressBarStyle.Continuous;
-                Cursor.Current = Cursors.WaitCursor;
-            });
-            buttonCompare.Enabled = true;
+            md5Sour = md5Dest           = null;
+            
+            progressBar1.Style          = ProgressBarStyle.Continuous;
+            Cursor.Current              = Cursors.Default;
+            buttonCompare.Enabled       = true;
+            buttonResolve.Enabled       = true;
+            textBoxSource.Enabled       = true;
+            textBoxDestination.Enabled  = true;
+            buttonSource.Enabled        = true;
+            buttonDestination.Enabled   = true;
+            verifySourcedestinationToolStripMenuItem.Enabled        = true;
             verifySourcedestinationinDepthToolStripMenuItem.Enabled = true;
         }
-        
+
         // --- BackGround compare directories 
         private void backgroundWorkerCompareFiles_DoWork(object sender, DoWorkEventArgs e)
         {
-            if (!backgroundWorkerCompareFiles.CancellationPending)
-            {
-                try
-                {
-                    //dirsComparison(sourceDirectory, destinationDirectory);    // TROUBLE MAKER !!!
-                    BeginInvoke((MethodInvoker)delegate
-                    {
-                        dirsComparison(sourceDirectory, destinationDirectory);
-                        Cursor.Current = Cursors.WaitCursor;
-                    });
-                }
-                catch (Exception ex)
-                {
-                    comparingFilesException = true;
-                    cancelBackgroundWorkers();
-                    MessageBox.Show(ex.Message, "Error in comparing files", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-            }
-            else
+            if (backgroundWorkerCompareFiles.CancellationPending)
             {
                 backgroundWorkerCompareFiles.Dispose();
                 backgroundWorkerCompareFiles.RunWorkerCompleted -= new RunWorkerCompletedEventHandler(backgroundWorkerCompareFiles_RunWorkerCompleted);
                 backgroundWorkerCompareFiles.DoWork -= new DoWorkEventHandler(backgroundWorkerCompareFiles_DoWork);
             }
+            else
+                dirsComparison(sourceDirectory, destinationDirectory);
         }
         private void backgroundWorkerCompareFiles_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
-            if (!comparingFilesException) {
+            if (!comparingFilesException)
                 comparingDone = true;
-                restoreAfterCompare();
-            }
-            else
-                restoreAfterCompare();
 
-            BeginInvoke((MethodInvoker)delegate
-            {
-                progressBar1.Style = ProgressBarStyle.Continuous;
-                Cursor.Current = Cursors.Default;
-            });
+            verifySourcedestinationToolStripMenuItem.Enabled        = true;
+            verifySourcedestinationinDepthToolStripMenuItem.Enabled = true;
+            
+            SW_comparing.Stop();
+            TimeSpan runTimeComparing = SW_comparing.Elapsed;
+            SW_comparing.Reset();
+
+            string beautifulTime = string.Format("{0:D2}h:{1:D2}m:{2:D2}s", runTimeComparing.Hours, runTimeComparing.Minutes, runTimeComparing.Seconds);
+
+            if (showDebugs) MessageBox.Show("Comparing execution time: " + beautifulTime, "Time elapsed");
+
+            restoreAfterCompare();
         }
 
         // --- BackGround resolving actions
@@ -1267,12 +1425,6 @@ namespace foldersCompare_Verification
         {
             if (!backgroundWorkerResolve.CancellationPending)
             {
-                BeginInvoke((MethodInvoker)delegate
-                {
-                    textBoxSourceDetails.TextAlign = HorizontalAlignment.Center;
-                    textBoxDestinationDetails.TextAlign = HorizontalAlignment.Center;
-                    Cursor.Current = Cursors.WaitCursor;
-                });
                 try
                 {
                     if (copyModeVanilla)            // Use vanilla copy
@@ -1311,58 +1463,41 @@ namespace foldersCompare_Verification
             else if (copyResult == -1)  // -1: exception thrown during copy (error)
             {
                 MessageBox.Show("ATTENTION: Files did NOT copied!", "Error!", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                BeginInvoke((MethodInvoker)delegate
-                {
-                    progressBar1.Style = ProgressBarStyle.Continuous;
-                    Cursor.Current = Cursors.Default;
-                    restoreAfterResolve();
-                    resetSettings();
-                });
+                restoreAfterResolve();
+                resetSettings();
             }
             else                        // >0: number of conflicts found (error)
             {
                 MessageBox.Show("ATTENTION: Double files detected! Not all files were copied!\n\rPlease verify your files manually!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                BeginInvoke((MethodInvoker)delegate
-                {
-                    progressBar1.Style = ProgressBarStyle.Continuous;
-                    Cursor.Current = Cursors.Default;
-                    restoreAfterResolve();
-                    resetSettings();
-                });
+                restoreAfterResolve();
+                resetSettings();
             }
         }
 
         // --- BackGround verify successful copy
         private void backgroundWorkerVerifyCopy_DoWork(object sender, DoWorkEventArgs e)
         {
-            if (!backgroundWorkerVerifyCopy.CancellationPending)
-            {
-                try
-                {
-                    verifyFileCopy();
-                }
-                catch (Exception ex)
-                {
-                    cancelBackgroundWorkers();
-                    MessageBox.Show(ex.Message, "Error in comparing files", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-            }
-            else
+            if (backgroundWorkerVerifyCopy.CancellationPending)
             {
                 backgroundWorkerVerifyCopy.Dispose();
                 backgroundWorkerVerifyCopy.RunWorkerCompleted -= new RunWorkerCompletedEventHandler(backgroundWorkerVerifyCopy_RunWorkerCompleted);
                 backgroundWorkerVerifyCopy.DoWork -= new DoWorkEventHandler(backgroundWorkerVerifyCopy_DoWork);
             }
+            else
+                verifyFileCopy();
         }
         private void backgroundWorkerVerifyCopy_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
-            BeginInvoke((MethodInvoker)delegate
-            {
-                restoreAfterResolve();
-                resetSettings();
-                progressBar1.Style = ProgressBarStyle.Continuous;
-                Cursor.Current = Cursors.Default;
-            });
+            SW_copying.Stop();
+            TimeSpan runTimeCopying = SW_copying.Elapsed;
+            SW_copying.Reset();
+
+            string beautifulTime = string.Format("{0:D2}h:{1:D2}m:{2:D2}s", runTimeCopying.Hours, runTimeCopying.Minutes, runTimeCopying.Seconds);
+
+            if (showDebugs) MessageBox.Show("Comparing-copying execution time: " + beautifulTime, "Time elapsed");
+
+            restoreAfterResolve();
+            resetSettings();
         }
 
         // --- BackGround verify source-directory (from toolstrip menu)
@@ -1370,10 +1505,6 @@ namespace foldersCompare_Verification
         {
             if (!backgroundWorkerVerifyToolstrip.CancellationPending)
             {
-                BeginInvoke((MethodInvoker)delegate
-                {
-                    verifySourcedestinationToolStripMenuItem.Enabled = false;
-                });
                 try
                 {
                     System.IO.DirectoryInfo dirSource = new System.IO.DirectoryInfo(sourceDirectory);
@@ -1397,24 +1528,28 @@ namespace foldersCompare_Verification
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(ex.Message, "Error in verifySourcedestinationToolStripMenuItem_Click", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show("Error in comparing source & destination directories!\r\n\r\n" + ex.Message, "Error in verifySourcedestinationToolStripMenuItem_Click", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
         }
         private void backgroundWorkerVerifyToolstrip_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
-            BeginInvoke((MethodInvoker)delegate
-            {
-                progressBar1.Style = ProgressBarStyle.Continuous;
-                Cursor.Current = Cursors.Default;
-            });
-            buttonCompare.Enabled = true;
-            verifySourcedestinationToolStripMenuItem.Enabled = true;
+            progressBar1.Style          = ProgressBarStyle.Continuous;
+            Cursor.Current              = Cursors.Default;
+            buttonCompare.Enabled       = true;
+            buttonResolve.Enabled       = true;
+            textBoxSource.Enabled       = true;
+            textBoxDestination.Enabled  = true;
+            buttonSource.Enabled        = true;
+            buttonDestination.Enabled   = true;
+            verifySourcedestinationToolStripMenuItem.Enabled        = true;
+            verifySourcedestinationinDepthToolStripMenuItem.Enabled = true;
         }
 
         // --- Canceling all background workers
         private void cancelBackgroundWorkers()
         {
+            cancelBgw = true;
             backgroundWorkerVerifyToolstrip.CancelAsync();
             backgroundWorkerVerifyCopy.CancelAsync();
             backgroundWorkerCompareFiles.CancelAsync();
@@ -1438,7 +1573,7 @@ namespace foldersCompare_Verification
         private void selectAllToolStripMenuItem_Click(object sender, EventArgs e)
         {
             selectAllToolStripMenuItem.Checked = !selectAllToolStripMenuItem.Checked;
-            bypassCancel = true;        // temporary allow checkBoxes to change state
+            bypassCheckCancel = true;        // temporary allow checkBoxes to change state
             if (selectAllToolStripMenuItem.Checked)
             { 
                 foreach (TreeNode node in treeViewCollisions.Nodes)
@@ -1455,13 +1590,13 @@ namespace foldersCompare_Verification
                     checkUncheckAll(node, false);
                 }
             }
-            bypassCancel = false;
+            bypassCheckCancel = false;
         }
         // - Inverse selection
         private void invertSelectionToolStripMenuItem_Click(object sender, EventArgs e)
         {
             selectAllToolStripMenuItem.Checked = false;
-            bypassCancel = true;
+            bypassCheckCancel = true;
             //bool currentNodeState;
             foreach (TreeNode node in treeViewCollisions.Nodes)
             {
@@ -1470,21 +1605,51 @@ namespace foldersCompare_Verification
                 else
                     checkUncheckAll(node, true);
             }
-            bypassCancel = false;
+            bypassCheckCancel = false;
         }
         // - Verify source-destination
         private void verifySourcedestinationToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            buttonCompare.Enabled = false;
+            buttonCompare.Enabled       = false;
+            buttonResolve.Enabled       = false;
+            textBoxSource.Enabled       = false;
+            textBoxDestination.Enabled  = false;
+            buttonSource.Enabled        = false;
+            buttonDestination.Enabled   = false;
+            verifySourcedestinationToolStripMenuItem.Enabled        = false;
+            verifySourcedestinationinDepthToolStripMenuItem.Enabled = false;
+
             backgroundWorkerVerifyToolstrip.RunWorkerAsync();
-            progressBar1.Style = ProgressBarStyle.Marquee;
+            progressBar1.Style  = ProgressBarStyle.Marquee;
+            Cursor.Current      = Cursors.WaitCursor;
         }
         // - Verify source-destination (in depth)
         private void verifySourcedestinationinDepthToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            buttonCompare.Enabled = false;
+            SW_verifyToolStripDepth.Reset();
+            SW_verifyToolStripDepth.Start();
+
+            buttonCompare.Enabled       = false;
+            buttonResolve.Enabled       = false;
+            textBoxSource.Enabled       = false;
+            textBoxDestination.Enabled  = false;
+            buttonSource.Enabled        = false;
+            buttonDestination.Enabled   = false;
+            verifySourcedestinationToolStripMenuItem.Enabled        = false;
+            verifySourcedestinationinDepthToolStripMenuItem.Enabled = false;
+
             backgroundWorkerMD5.RunWorkerAsync();
-            progressBar1.Style = ProgressBarStyle.Marquee;
+            progressBar1.Style  = ProgressBarStyle.Marquee;
+            Cursor.Current      = Cursors.WaitCursor; 
+        }
+        // - Show debug messageboxes
+        private void debuggingMsgBoxesToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            showDebugs = showDebugs ? false : true;
+            if (showDebugs)
+                debuggingMsgBoxesToolStripMenuItem.BackColor = Color.FromKnownColor(KnownColor.ActiveCaption);
+            else
+                debuggingMsgBoxesToolStripMenuItem.BackColor = Color.FromKnownColor(KnownColor.Control);
         }
         // ~~~ Help menu
         // - General Info
@@ -1523,26 +1688,18 @@ namespace foldersCompare_Verification
         private void textBoxSourceBuilder()
         {
             // -- Getting selected node's full path (with respect to source directory)
-            string actualSelected_tbsb = "";
-
             var find = comFiles.FirstOrDefault(x => x.nodePath == treeViewCollisions.SelectedNode.FullPath);
+            
+            textBoxSourceDetails.Text = find.PathToSource;
 
-            actualSelected_tbsb = find.PathToSource;
-
-            // getting file's size in bytes
-            //FileInfo fi = new FileInfo(actualSelected_tbsb);
-            //long fileSizeBytes = fi.Length;
-
-            textBoxSourceDetails.Text = actualSelected_tbsb;
-
-            textBoxSourceDetails.Text += "\r\n\r\nFile size\t\t:\t";
-            textBoxSourceDetails.Text += editedSizeString(find.sourceFileSize);   // beautify the file size
-            textBoxSourceDetails.Text += "\r\n\r\nLast Access Time\t:\t";
-            textBoxSourceDetails.Text += System.IO.File.GetLastAccessTime(actualSelected_tbsb).ToString();
-            textBoxSourceDetails.Text += "\r\nLast Write Time\t:\t";
-            textBoxSourceDetails.Text += System.IO.File.GetLastWriteTime(actualSelected_tbsb).ToString();
-            textBoxSourceDetails.Text += "\r\nCreation Time\t:\t";
-            textBoxSourceDetails.Text += System.IO.File.GetCreationTime(actualSelected_tbsb).ToString();
+            textBoxSourceDetails.Text += "\r\n\r\n File size\t\t:\t";
+            textBoxSourceDetails.Text += editedSizeString(find.sourceFileSize);   // beautify file size
+            textBoxSourceDetails.Text += "\r\n\r\n Last Access Time\t:\t";
+            textBoxSourceDetails.Text += System.IO.File.GetLastAccessTime(find.PathToSource).ToString();
+            textBoxSourceDetails.Text += "\r\n Last Write Time\t:\t";
+            textBoxSourceDetails.Text += System.IO.File.GetLastWriteTime(find.PathToSource).ToString();
+            textBoxSourceDetails.Text += "\r\n Creation Time\t:\t";
+            textBoxSourceDetails.Text += System.IO.File.GetCreationTime(find.PathToSource).ToString();
         }
         private void textBoxDestinationBuilder(string pathToDisplay)
         {
@@ -1552,21 +1709,19 @@ namespace foldersCompare_Verification
             }
             else
             {
-                //string actualSelected_tbdb = pathToDisplay;
-
                 // getting file's size in bytes
                 FileInfo fi = new FileInfo(pathToDisplay);
                 long fileSizeBytes = fi.Length;
 
                 textBoxDestinationDetails.Text = pathToDisplay;
 
-                textBoxDestinationDetails.Text += "\r\n\r\nFile size\t\t:\t";
+                textBoxDestinationDetails.Text += "\r\n\r\n File size\t\t:\t";
                 textBoxDestinationDetails.Text += editedSizeString(fileSizeBytes);     // beautify the file size
-                textBoxDestinationDetails.Text += "\r\n\r\nLast Access Time\t:\t";
+                textBoxDestinationDetails.Text += "\r\n\r\n Last Access Time\t:\t";
                 textBoxDestinationDetails.Text += System.IO.File.GetLastAccessTime(pathToDisplay);
-                textBoxDestinationDetails.Text += "\r\nLast Write Time\t:\t";
+                textBoxDestinationDetails.Text += "\r\n Last Write Time\t:\t";
                 textBoxDestinationDetails.Text += System.IO.File.GetLastWriteTime(pathToDisplay);
-                textBoxDestinationDetails.Text += "\r\nCreation Time\t:\t";
+                textBoxDestinationDetails.Text += "\r\n Creation Time\t:\t";
                 textBoxDestinationDetails.Text += System.IO.File.GetCreationTime(pathToDisplay);
             }
         }
@@ -1590,7 +1745,7 @@ namespace foldersCompare_Verification
         // ~ cancel checking of checkBox
         private void treeViewCollisions_BeforeCheck(object sender, TreeViewCancelEventArgs e)
         {
-            if (!bypassCancel)  // allow checkBoxes check only by software (not the user)
+            if (!bypassCheckCancel)  // allow checkBoxes check only by software (not the user)
                 e.Cancel = true;
         }
         
@@ -1598,7 +1753,7 @@ namespace foldersCompare_Verification
         private void treeViewCollisions_AfterSelect(object sender, TreeViewEventArgs e)
         {
             bool isDirectory = false;
-            bypassCancel = true;    // allow checkBoxes check only from the code below (not from the user)
+            bypassCheckCancel = true;    // allow checkBoxes check only from the code below (not from the user)
 
             // No checkBoxes if in "applyToAllFiles" mode
             if (checkBoxCustomSettings.Checked)
@@ -1666,7 +1821,7 @@ namespace foldersCompare_Verification
                 if (!copyModeVanilla)
                     textBoxDestinationBuilder(collFile.PathToDestination);  // Show selected destination file's information (creation date etc.)
             }
-            bypassCancel = false;   // allow checkBoxes check only from the code above (not from the user)
+            bypassCheckCancel = false;   // allow checkBoxes check only from the code above (not from the user)
         }
 
         // ~ checkBox checked - auto-check all children nodes
@@ -1805,7 +1960,7 @@ namespace foldersCompare_Verification
                 // set resolve action for children under selected directory
                 if (checkBoxCustomSettings.Checked)
                 {
-                    CheckAllChildNodes(treeViewCollisions.SelectedNode, true, resolveAction);               // NEW !!!!
+                    CheckAllChildNodes(treeViewCollisions.SelectedNode, true, resolveAction);
                 }
             }
             else
